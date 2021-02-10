@@ -20,15 +20,16 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
-#[cfg(test)]
+#[cfg(test)] // needed only for test
 mod mock;
-#[cfg(test)]
+#[cfg(test)] // needed only for test
 mod tests;
-#[cfg(feature = "runtime-benchmarks")]
-mod benchmarking;
+#[cfg(feature = "runtime-benchmarks")] // only of runtime-benchmark
+mod benchmarking; 
 mod default_weights;
 mod migrations;
 
+// like includes
 use codec::{Encode, Decode};
 use sp_std::{result, ops::Bound::Included, prelude::*, collections::btree_map::BTreeMap};
 use sp_runtime::{RuntimeDebug, Perbill, traits::{Saturating, Zero}};
@@ -46,20 +47,23 @@ use frame_system::{ensure_root, ensure_signed};
 /// Trait for generating reward locks.
 pub trait GenerateRewardLocks<T: Config> {
 	/// Generate reward locks.
-	fn generate_reward_locks(
+	fn generate_reward_locks( // like declaring the function lol
+// types of the two arguments to calculate the reward lock of course
 		current_block: T::BlockNumber,
 		total_reward: BalanceOf<T>,
+// return type
 	) -> BTreeMap<T::BlockNumber, BalanceOf<T>>;
 
 	fn max_locks() -> u32;
 }
 
+// implementation...
 impl<T: Config> GenerateRewardLocks<T> for () {
 	fn generate_reward_locks(
-		_current_block: T::BlockNumber,
+		_current_block: T::BlockNumber, // _ not warning for unused
 		_total_reward: BalanceOf<T>,
-	) -> BTreeMap<T::BlockNumber, BalanceOf<T>> {
-		Default::default()
+	) -> BTreeMap<T::BlockNumber, BalanceOf<T>> { // like an hashmap but with more functions
+		Default::default() // where is it...?
 	}
 
 	fn max_locks() -> u32 {
@@ -68,7 +72,7 @@ impl<T: Config> GenerateRewardLocks<T> for () {
 }
 
 pub trait WeightInfo {
-	fn on_initialize() -> Weight;
+	fn on_initialize() -> Weight; // this type has been inlcuded with `use` before.
 	fn on_finalize() -> Weight;
 	fn note_author_prefs() -> Weight;
 	fn set_reward() -> Weight;
