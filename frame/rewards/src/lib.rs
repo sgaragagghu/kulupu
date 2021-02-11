@@ -119,7 +119,7 @@ decl_storage! {
 
 		/// Current block reward for miner.
 		Reward get(fn reward) config(): BalanceOf<T>; // reward
-		/// Pending reward locks.
+		/// Pending reward locks.   // get function aliased as reward_lock is seems
 		RewardLocks get(fn reward_locks): map hasher(twox_64_concat) T::AccountId => BTreeMap<T::BlockNumber, BalanceOf<T>>;
 		/// Reward changes planned in the future.
 		RewardChanges get(fn reward_changes): BTreeMap<T::BlockNumber, BalanceOf<T>>;
@@ -171,21 +171,21 @@ decl_module! {
 // It is the responsibility of a external block verifier to check this. Runtime API calls will initialize the block without pre-runtime digests, 
 // so initialization cannot fail when they are missing.
 
-				.filter_map(|s| s.as_pre_runtime())
+				.filter_map(|s| s.as_pre_runtime()) // filtering i guess https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.filter_map
 				.filter_map(|(id, mut data)| if id == POW_ENGINE_ID { // if the pow engine ID matches (i guess like version..? for hard forks)
 					// i guess decoding digest to the account id... ok() converst result to option
-					T::AccountId::decode(&mut data).ok()
+					T::AccountId::decode(&mut data).ok() //it's kinda doing it for everyone instead of doing it just for the one we need...
 				} else {
 					None
 				})
 				.next(); // returns none when iteration is finished.
 
 			if let Some(author) = author { // if author isn't None basically
-				<Self as Store>::Author::put(author); // TODO we will inderstasnd it i guess when i'll see where is the get...
+				<Self as Store>::Author::put(author); // putting the author...
 			}
 
 			//https://doc.rust-lang.org/book/ch03-01-variables-and-mutability.html
-			// ################################################# HERE UNDERSAND MUTABLE. SEE MUTATE###########################
+			// It`s like set get etc, its a function of storage of substrate it seems.
 			RewardChanges::<T>::mutate(|reward_changes| {
 				let mut removing = Vec::new();
 				
@@ -200,7 +200,7 @@ decl_module! {
 				}
 
 				for block_number in removing { // removing the block numbers for which we ve already did the reward change
-					reward_changes.remove(&block_number); to remove it.. it must be passed the reference, dunno why anyway.
+					reward_changes.remove(&block_number); // to remove it.. it must be passed the reference, dunno why anyway.
 				}
 			});
 		
@@ -223,16 +223,20 @@ decl_module! {
 			T::WeightInfo::on_initialize().saturating_add(T::WeightInfo::on_finalize())
 		}
 
+// After all queued extrinsics have been executed, the Executive module calls into each module's on_finalize function to perform any final
+// business logic which should take place at the end of the block. The modules are again executed in the order which they are defined in the 
+// construct_runtime! macro, but in this case, the System module finalizes last.
+
 		fn on_finalize(now: T::BlockNumber) {
-			if let Some(author) = <Self as Store>::Author::get() {
-				let reward = Reward::<T>::get();
-				Self::do_reward(&author, reward, now);
+			if let Some(author) = <Self as Store>::Author::get() { // if it`s not None
+				let reward = Reward::<T>::get(); // reward amount
+				Self::do_reward(&author, reward, now); // function to pay
 			}
 
-			let mints = Mints::<T>::get();
-			Self::do_mints(&mints);
+			let mints = Mints::<T>::get(); //mint amount
+			Self::do_mints(&mints); //pay mint
 
-			<Self as Store>::Author::kill();
+			<Self as Store>::Author::kill(); // deletes it
 		}
 
 		fn on_runtime_upgrade() -> frame_support::weights::Weight {
@@ -240,10 +244,10 @@ decl_module! {
 			let new_version = version.migrate::<T>();
 			StorageVersion::put(new_version);
 
-			0
+			0 //why?
 		}
 
-		#[weight = 0]
+		#[weight = 0] // probably because its done by the root anyway...
 		fn set_schedule(
 			origin,
 			reward: BalanceOf<T>,
@@ -251,8 +255,9 @@ decl_module! {
 			reward_changes: BTreeMap<T::BlockNumber, BalanceOf<T>>,
 			mint_changes: BTreeMap<T::BlockNumber, BTreeMap<T::AccountId, BalanceOf<T>>>,
 		) {
-			ensure_root(origin)?;
-
+			ensure_root(origin)?; // must be the root
+			
+			// checking errors...
 			ensure!(reward >= T::Currency::minimum_balance(), Error::<T>::RewardTooLow);
 			for (_, mint) in &mints {
 				ensure!(*mint >= T::Currency::minimum_balance(), Error::<T>::MintTooLow);
@@ -283,35 +288,40 @@ decl_module! {
 			ensure_signed(origin)?;
 
 			let locks = Self::reward_locks(&target);
-			let current_number = frame_system::Module::<T>::block_number();
-			Self::do_update_reward_locks(&target, locks, current_number);
+			let current_number = frame_system::Module::<T>::block_number(); // current block
+			Self::do_update_reward_locks(&target, locks, current_number); // actual function..
 		}
 	}
 }
 
-const REWARDS_ID: LockIdentifier = *b"rewards ";
+const REWARDS_ID: LockIdentifier = *b"rewards "; // TODO not sure... seems just an ascii string
 
+// help functions
 impl<T: Config> Module<T> {
 	fn do_reward(author: &T::AccountId, reward: BalanceOf<T>, when: T::BlockNumber) {
 		let miner_total = reward;
 
-		let miner_reward_locks = T::GenerateRewardLocks::generate_reward_locks(
+		let miner_reward_locks = T::GenerateRewardLocks::generate_reward_locks( // calling the function
 			when,
 			miner_total,
 		);
 
-		drop(T::Currency::deposit_creating(&author, miner_total));
+		// drop is destructor
+		drop(T::Currency::deposit_creating(&author, miner_total)); // depositing the coins
 
-		if miner_reward_locks.len() > 0 {
-			let mut locks = Self::reward_locks(&author);
+		if miner_reward_locks.len() > 0 { //why shouldn`t it be ?
+			let mut locks = Self::reward_locks(&author); // get the other locks
 
-			for (new_lock_number, new_lock_balance) in miner_reward_locks {
-				let old_balance = *locks.get(&new_lock_number).unwrap_or(&BalanceOf::<T>::default());
-				let new_balance = old_balance.saturating_add(new_lock_balance);
+			for (new_lock_number, new_lock_balance) in miner_reward_locks { // for each new unlock that will happen
+				// Returns the contained Some value or a provided default... 
+				// TODO &BalanceOf::<T>::default() what`s this default ?
+				let old_balance = *locks.get(&new_lock_number).unwrap_or(&BalanceOf::<T>::default()); // get old balance
+				// saturating doesn`t overflow (it means it will just saturate...)
+				let new_balance = old_balance.saturating_add(new_lock_balance); // create new balance
 				locks.insert(new_lock_number, new_balance);
 			}
 
-			Self::do_update_reward_locks(&author, locks, when);
+			Self::do_update_reward_locks(&author, locks, when); // unlock what`s unlockable
 		}
 	}
 
@@ -338,7 +348,7 @@ impl<T: Config> Module<T> {
 		T::Currency::set_lock(
 			REWARDS_ID,
 			&author,
-			total_locked,
+			total_locked, // new total lock
 			WithdrawReasons::except(WithdrawReasons::TRANSACTION_PAYMENT),
 		);
 
@@ -349,7 +359,7 @@ impl<T: Config> Module<T> {
 		mints: &BTreeMap<T::AccountId, BalanceOf<T>>,
 	) {
 		for (destination, mint) in mints {
-			drop(T::Currency::deposit_creating(&destination, *mint));
+			drop(T::Currency::deposit_creating(&destination, *mint)); // depositing
 		}
 	}
 }
