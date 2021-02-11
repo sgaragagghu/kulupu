@@ -111,20 +111,21 @@ decl_error! {
 	}
 }
 
+// seems easy..
 decl_storage! {
 	trait Store for Module<T: Config> as Rewards {
 		/// Current block author.
-		Author get(fn author): Option<T::AccountId>;
+		Author get(fn author): Option<T::AccountId>; //TODO not sure about it, probably ill get it later when used
 
 		/// Current block reward for miner.
-		Reward get(fn reward) config(): BalanceOf<T>;
+		Reward get(fn reward) config(): BalanceOf<T>; // reward
 		/// Pending reward locks.
 		RewardLocks get(fn reward_locks): map hasher(twox_64_concat) T::AccountId => BTreeMap<T::BlockNumber, BalanceOf<T>>;
 		/// Reward changes planned in the future.
 		RewardChanges get(fn reward_changes): BTreeMap<T::BlockNumber, BalanceOf<T>>;
 
 		/// Current block mints.
-		Mints get(fn mints) config(): BTreeMap<T::AccountId, BalanceOf<T>>;
+		Mints get(fn mints) config(): BTreeMap<T::AccountId, BalanceOf<T>>; // donation
 		/// Mint changes planned in the future.
 		MintChanges get(fn mint_changes): BTreeMap<T::BlockNumber, BTreeMap<T::AccountId, BalanceOf<T>>>;
 
@@ -135,7 +136,7 @@ decl_storage! {
 decl_event! {
 	pub enum Event<T> where AccountId = <T as frame_system::Config>::AccountId, Balance = BalanceOf<T> {
 		/// A new schedule has been set.
-		ScheduleSet,
+		ScheduleSet, // TODO ill get this later i guess
 		/// Reward has been sent.
 		Rewarded(AccountId, Balance),
 		/// Reward has been changed.
@@ -148,42 +149,62 @@ decl_event! {
 }
 
 decl_module! {
-	pub struct Module<T: Config> for enum Call where origin: T::Origin {
-		type Error = Error<T>;
+	pub struct Module<T: Config> for enum Call where origin: T::Origin { // implementing the struct THAT'S the module itself.
+		type Error = Error<T>; // ok
 
-		fn deposit_event() = default;
+		fn deposit_event() = default; // OK
 
-		fn on_initialize(now: T::BlockNumber) -> Weight {
-			let author = frame_system::Module::<T>::digest()
-				.logs
-				.iter()
+		fn on_initialize(now: T::BlockNumber) -> Weight { // ON_ means happen on events..
+// To initialize a block, the System module and all other included runtime modules have their on_initialize 
+// function called which executes any business logic defined by those modules to take place before transactions are 
+// executed. The modules are executed in the order which they are defined in the construct_runtime! macro, but with the 
+// System module always executing first.
+			let author = frame_system::Module::<T>::digest()  	// System digest item that contains the root of changes trie at given block. 
+										// It is created for 
+										// every block iff runtime supports changes trie creation.
+				.logs // Get reference to all digest items. pub fn logs(&self) -> &[DigestItem<Hash>]
+				.iter() // returns the iterator
+// A pre-runtime digest.
+// These are messages from the consensus engine to the runtime, although the consensus engine can (and should) read them 
+// itself to avoid code and state duplication. It is erroneous for a runtime to produce these, but this is not (yet) checked.
+// NOTE: the runtime is not allowed to panic or fail in an on_initialize call if an expected PreRuntime digest is not present. 
+// It is the responsibility of a external block verifier to check this. Runtime API calls will initialize the block without pre-runtime digests, 
+// so initialization cannot fail when they are missing.
+
 				.filter_map(|s| s.as_pre_runtime())
-				.filter_map(|(id, mut data)| if id == POW_ENGINE_ID {
+				.filter_map(|(id, mut data)| if id == POW_ENGINE_ID { // if the pow engine ID matches (i guess like version..? for hard forks)
+					// i guess decoding digest to the account id... ok() converst result to option
 					T::AccountId::decode(&mut data).ok()
 				} else {
 					None
 				})
-				.next();
+				.next(); // returns none when iteration is finished.
 
-			if let Some(author) = author {
-				<Self as Store>::Author::put(author);
+			if let Some(author) = author { // if author isn't None basically
+				<Self as Store>::Author::put(author); // TODO we will inderstasnd it i guess when i'll see where is the get...
 			}
 
+			//https://doc.rust-lang.org/book/ch03-01-variables-and-mutability.html
+			// ################################################# HERE UNDERSAND MUTABLE. SEE MUTATE###########################
 			RewardChanges::<T>::mutate(|reward_changes| {
 				let mut removing = Vec::new();
+				
+				// searches occurrences in that range, each occurence is a reward change..
+				for (block_number, reward) in reward_changes.range((Included(Zero::zero()), Included(now))) { // now is the block number...
+					Reward::<T>::set(*reward); // *reward.. so the value!!!
+								   // reward has been set in decl_starage...
+								   // couldnt it fail ?!?
+					removing.push(*block_number); we have to remove this block number... dereferenced
 
-				for (block_number, reward) in reward_changes.range((Included(Zero::zero()), Included(now))) {
-					Reward::<T>::set(*reward);
-					removing.push(*block_number);
-
-					Self::deposit_event(Event::<T>::RewardChanged(*reward));
+					Self::deposit_event(Event::<T>::RewardChanged(*reward)); // emitting the event *event so the value!!!
 				}
 
-				for block_number in removing {
-					reward_changes.remove(&block_number);
+				for block_number in removing { // removing the block numbers for which we ve already did the reward change
+					reward_changes.remove(&block_number); to remove it.. it must be passed the reference, dunno why anyway.
 				}
 			});
-
+		
+			// same as above
 			MintChanges::<T>::mutate(|mint_changes| {
 				let mut removing = Vec::new();
 
