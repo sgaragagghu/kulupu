@@ -70,7 +70,7 @@ fn genesis_config_works() {
 fn set_reward_works() {
 	new_test_ext(1).execute_with(|| {
 		// Fails with bad origin
-		assert_noop!(Rewards::set_schedule(Origin::signed(1), 42, Default::default(), Default::default(), Default::default()), BadOrigin);
+		assert_noop!(Rewards::set_schedule(Origin::signed(1), 42, Default::default(), Default::default(), Default::default()), BadOrigin); // Default are probably empty hashmap or btree
 		// Successful
 		assert_ok!(Rewards::set_schedule(Origin::root(), 42, Default::default(), Default::default(), Default::default()));
 		assert_eq!(Reward::<Test>::get(), 42);
