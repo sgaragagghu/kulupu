@@ -49,20 +49,21 @@ benchmarks! {
 	_ { }
 
 	// Worst case: Author info is in digest, and curve needs to be updated.
-	on_initialize {
+	on_initialize { //preparation
 		let author: T::AccountId = account("author", 0, 0); // create an account...
 		let author_digest = DigestItemOf::<T>::PreRuntime(sp_consensus_pow::POW_ENGINE_ID, author.encode()); // figest
 		frame_system::Module::<T>::deposit_log(author_digest); //adding the digest
 
-		Reward::<T>::put(T::Currency::minimum_balance()); // 
-		Taxation::put(Perbill::zero());
-		Curve::<T>::put(vec![CurvePoint { start: 0u32.into(), reward: BalanceOf::<T>::max_value(), taxation: Perbill::max_value() }]);
+		Reward::<T>::put(T::Currency::minimum_balance()); // minimum reward.. why?
+		Taxation::put(Perbill::zero()); // minimum
+							//0u32
+		Curve::<T>::put(vec![CurvePoint { start: 0u32.into(), reward: BalanceOf::<T>::max_value(), taxation: Perbill::max_value() }]); // creating curve
 
 		// Whitelist transient storage items
-		frame_benchmarking::benchmarking::add_to_whitelist(Author::<T>::hashed_key().to_vec().into());
+		frame_benchmarking::benchmarking::add_to_whitelist(Author::<T>::hashed_key().to_vec().into()); // TODO ask why is it needed
 
-		let block_number = frame_system::Module::<T>::block_number();
-	}: { crate::Module::<T>::on_initialize(block_number); }
+		let block_number = frame_system::Module::<T>::block_number(); //current block number
+	}: { crate::Module::<T>::on_initialize(block_number); } // run on initializw
 	verify {
 		assert_eq!(Author::<T>::get(), Some(author));
 		assert_eq!(Reward::<T>::get(), BalanceOf::<T>::max_value());
@@ -70,7 +71,7 @@ benchmarks! {
 
 	// Worst case: This author already has `max_locks` locked up, produces a new block, and we unlock
 	// everything in addition to creating brand new locks for the new reward.
-	on_finalize {
+	on_finalize {// preparation
 		let author: T::AccountId = account("author", 0, 0);
 		let donation = Perbill::from_percent(50);
 		let reward = BalanceOf::<T>::max_value();
@@ -83,19 +84,20 @@ benchmarks! {
 		Taxation::put(taxation);
 
 		// Create existing locks on author.
-		let max_locks = T::GenerateRewardLocks::max_locks();
-		create_locks::<T>(&author, max_locks);
+		let max_locks = T::GenerateRewardLocks::max_locks(); // TODO there are two implemenation of this fuctions, this should return 100. its interesting
+								     // to try to call the other one to see how i should do to call the other one lol
+		create_locks::<T>(&author, max_locks); // fn on the beginning
 
 		// Move to a point where all locks would unlock.
-		frame_system::Module::<T>::set_block_number(max_locks.into());
-		assert_eq!(RewardLocks::<T>::get(&author).iter().count() as u32, max_locks);
+		frame_system::Module::<T>::set_block_number(max_locks.into()); // jumping block name
+		assert_eq!(RewardLocks::<T>::get(&author).iter().count() as u32, max_locks); 
 
 		// Whitelist transient storage items
-		frame_benchmarking::benchmarking::add_to_whitelist(Author::<T>::hashed_key().to_vec().into());
-		frame_benchmarking::benchmarking::add_to_whitelist(AuthorDonation::hashed_key().to_vec().into());
+		frame_benchmarking::benchmarking::add_to_whitelist(Author::<T>::hashed_key().to_vec().into()); // TODO
+		frame_benchmarking::benchmarking::add_to_whitelist(AuthorDonation::hashed_key().to_vec().into()); // TODO
 
 		let block_number = frame_system::Module::<T>::block_number();
-	}: { crate::Module::<T>::on_finalize(block_number); }
+	}: { crate::Module::<T>::on_finalize(block_number); } // call on finalize...
 	verify {
 		assert!(Author::<T>::get().is_none());
 		assert!(AuthorDonation::get().is_none());
@@ -129,10 +131,11 @@ benchmarks! {
 		let miner = account("miner", 0, 0);
 		let max_locks = T::GenerateRewardLocks::max_locks();
 		create_locks::<T>(&miner, max_locks);
-		let caller = whitelisted_caller();
-		frame_system::Module::<T>::set_block_number(max_locks.into());
-		assert_eq!(RewardLocks::<T>::get(&miner).iter().count() as u32, max_locks);
-	}: _(RawOrigin::Signed(caller), miner.clone())
+		let caller = whitelisted_caller(); // return an AccountId which is whitelisted
+		frame_system::Module::<T>::set_block_number(max_locks.into()); // as before
+		assert_eq!(RewardLocks::<T>::get(&miner).iter().count() as u32, max_locks); // ok
+	// syntax is different here, on finelaise and on initialize is different!!
+	}: _(RawOrigin::Signed(caller), miner.clone()) // RawOrigin i guess to create
 	verify {
 		assert_eq!(RewardLocks::<T>::get(&miner).iter().count(), 0);
 	}
