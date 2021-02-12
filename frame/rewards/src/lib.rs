@@ -310,7 +310,7 @@ impl<T: Config> Module<T> {
 		drop(T::Currency::deposit_creating(&author, miner_total)); // depositing the coins
 
 		if miner_reward_locks.len() > 0 { //why shouldn`t it be ?
-			let mut locks = Self::reward_locks(&author); // get the other locks
+			let mut locks = Self::reward_locks(&author); // get the other locks. WE ARE NOT MODIFYING THE ORIGINAL !!!
 
 			for (new_lock_number, new_lock_balance) in miner_reward_locks { // for each new unlock that will happen
 				// Returns the contained Some value or a provided default... 
@@ -325,7 +325,8 @@ impl<T: Config> Module<T> {
 		}
 	}
 
-	fn do_update_reward_locks(
+	fn do_update_reward_locks( // here we are managinf the actual balance of the account. releasing coins and adding lock on chain through the lock pallet
+				   // i guess
 		author: &T::AccountId,
 		mut locks: BTreeMap<T::BlockNumber, BalanceOf<T>>,
 		current_number: T::BlockNumber
@@ -335,9 +336,9 @@ impl<T: Config> Module<T> {
 
 		for (block_number, locked_balance) in &locks {
 			if block_number <= &current_number {
-				expired.push(*block_number);
+				expired.push(*block_number); // collecting the expired locks based on data collected in the function caller 
 			} else {
-				total_locked = total_locked.saturating_add(*locked_balance);
+				total_locked = total_locked.saturating_add(*locked_balance); // se non è da rilasciare è da lockare
 			}
 		}
 
@@ -345,14 +346,19 @@ impl<T: Config> Module<T> {
 			locks.remove(&block_number);
 		}
 
+// Create a new balance lock on account who.
+// If the new lock is valid (i.e. not already expired), it will push the struct to 
+// the Locks vec in storage. Note that you can lock more funds than a user has.
+// If the lock id already exists, this will update it.
+
 		T::Currency::set_lock(
 			REWARDS_ID,
 			&author,
 			total_locked, // new total lock
-			WithdrawReasons::except(WithdrawReasons::TRANSACTION_PAYMENT),
+			WithdrawReasons::except(WithdrawReasons::TRANSACTION_PAYMENT), // means you can use locked coins for transaction payment.
 		);
 
-		<Self as Store>::RewardLocks::insert(author, locks);
+		<Self as Store>::RewardLocks::insert(author, locks); // here updating the locks.
 	}
 
 	fn do_mints(
@@ -367,7 +373,7 @@ impl<T: Config> Module<T> {
 pub const INHERENT_IDENTIFIER_V0: InherentIdentifier = *b"rewards_";
 pub const INHERENT_IDENTIFIER: InherentIdentifier = *b"rewards1";
 
-#[derive(Encode, Decode, RuntimeDebug)]
+#[derive(Encode, Decode, RuntimeDebug)] // automagically implements the Traits encode, decode, runtimedebug
 pub enum InherentError { }
 
 impl IsFatalError for InherentError {
