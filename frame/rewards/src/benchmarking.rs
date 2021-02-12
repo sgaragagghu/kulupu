@@ -50,11 +50,11 @@ benchmarks! {
 
 	// Worst case: Author info is in digest, and curve needs to be updated.
 	on_initialize {
-		let author: T::AccountId = account("author", 0, 0);
-		let author_digest = DigestItemOf::<T>::PreRuntime(sp_consensus_pow::POW_ENGINE_ID, author.encode());
-		frame_system::Module::<T>::deposit_log(author_digest);
+		let author: T::AccountId = account("author", 0, 0); // create an account...
+		let author_digest = DigestItemOf::<T>::PreRuntime(sp_consensus_pow::POW_ENGINE_ID, author.encode()); // figest
+		frame_system::Module::<T>::deposit_log(author_digest); //adding the digest
 
-		Reward::<T>::put(T::Currency::minimum_balance());
+		Reward::<T>::put(T::Currency::minimum_balance()); // 
 		Taxation::put(Perbill::zero());
 		Curve::<T>::put(vec![CurvePoint { start: 0u32.into(), reward: BalanceOf::<T>::max_value(), taxation: Perbill::max_value() }]);
 
