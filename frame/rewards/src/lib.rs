@@ -370,6 +370,10 @@ impl<T: Config> Module<T> {
 	}
 }
 
+// Probably not understandable now.. to be studied later:
+// interaction with substrate/primitives/inherents/src/lib.rs and, specifically, the required implementation 
+// of ProvideInherent and ProvideInherentData to create and check inherents.
+
 pub const INHERENT_IDENTIFIER_V0: InherentIdentifier = *b"rewards_";
 pub const INHERENT_IDENTIFIER: InherentIdentifier = *b"rewards1";
 
