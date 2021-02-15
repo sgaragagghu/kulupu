@@ -128,7 +128,7 @@ decl_storage! {
 		Mints get(fn mints) config(): BTreeMap<T::AccountId, BalanceOf<T>>; // donation
 		/// Mint changes planned in the future.
 		MintChanges get(fn mint_changes): BTreeMap<T::BlockNumber, BTreeMap<T::AccountId, BalanceOf<T>>>;
-
+		// whatever - put it at V1 at start
 		StorageVersion build(|_| migrations::StorageVersion::V1): migrations::StorageVersion;
 	}
 }
