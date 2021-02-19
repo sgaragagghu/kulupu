@@ -56,7 +56,7 @@ decl_storage! {
 	trait Store for Module<T: Config> as Difficulty {
 		/// Past difficulties and timestamps, from earliest to latest.
 		PastDifficultiesAndTimestamps:
-		[Option<DifficultyAndTimestamp<T::Moment>>; 60]
+		[Option<DifficultyAndTimestamp<T::Moment>>; 60] // just array with these two types for each element (so its a matrix)
 			= [None; DIFFICULTY_ADJUST_WINDOW as usize];
 		/// Current difficulty.
 		pub CurrentDifficulty get(fn difficulty) build(|config: &GenesisConfig| {
@@ -74,11 +74,15 @@ decl_module! {
 	}
 }
 
+// Something which can be notified when the timestamp is set. Set this to () if not needed. 
+// i guess the timestamp of the block... so when mined...?
 impl<T: Config> OnTimestampSet<T::Moment> for Module<T> {
-	fn on_timestamp_set(now: T::Moment) {
-		let block_time = UniqueSaturatedInto::<u128>::unique_saturated_into(T::TargetBlockTime::get());
+	fn on_timestamp_set(now: T::Moment) { // i guess now is the timestamp
+		// Just like Into except that if the source value is too big to fit into the destination type then it'll saturate the destination.
+		let block_time = UniqueSaturatedInto::<u128>::unique_saturated_into(T::TargetBlockTime::get()); // safe downcast basically
 		let block_time_window = DIFFICULTY_ADJUST_WINDOW as u128 * block_time;
 
+		// getting from storage
 		let mut data = PastDifficultiesAndTimestamps::<T>::get();
 
 		for i in 1..data.len() {
