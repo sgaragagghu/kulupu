@@ -85,10 +85,12 @@ impl<T: Config> OnTimestampSet<T::Moment> for Module<T> {
 		// getting from storage
 		let mut data = PastDifficultiesAndTimestamps::<T>::get();
 
+		// shifting the array losing the oldest. i'm kinda making space for a new ... element?
 		for i in 1..data.len() {
 			data[i - 1] = data[i];
 		}
 
+		// instatianing the new element with the current block i guess, since we ar in the ontimestampset function..
 		data[data.len() - 1] = Some(DifficultyAndTimestamp {
 			timestamp: now,
 			difficulty: Self::difficulty(),
