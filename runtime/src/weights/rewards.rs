@@ -75,5 +75,4 @@ impl<T: frame_system::Config> rewards::WeightInfo for WeightInfo<T> {
 		(16_100_000 as Weight)
 			.saturating_add(T::DbWeight::get().writes(1 as Weight))
 	}
-	
 }
