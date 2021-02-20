@@ -127,6 +127,7 @@ mod tests {
 			assert_ok!(test_benchmark_on_initialize::<Test>());
 			assert_ok!(test_benchmark_unlock::<Test>());
 			assert_ok!(test_benchmark_set_schedule::<Test>());
+			assert_ok!(test_benchmark_set_lock_params::<Test>());
 		});
 	}
 }
