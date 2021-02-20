@@ -29,12 +29,12 @@ impl crate::WeightInfo for () {
 			.saturating_add(DbWeight::get().writes(2 as Weight))
 	}
 	fn on_finalize() -> Weight {
-		(191_500_000 as Weight)
+		(121_500_000 as Weight)
 			.saturating_add(DbWeight::get().reads(5 as Weight))
 			.saturating_add(DbWeight::get().writes(3 as Weight))
 	}
 	fn unlock() -> Weight {
-		(129_100_000 as Weight)
+		(46_000_000 as Weight)
 			.saturating_add(DbWeight::get().reads(1 as Weight))
 			.saturating_add(DbWeight::get().writes(1 as Weight))
 	}
@@ -43,7 +43,7 @@ impl crate::WeightInfo for () {
 			.saturating_add(DbWeight::get().writes(4 as Weight))
 	}
 	fn set_lock_params() -> Weight {
-		(16_100_000 as Weight)
+		(0 as Weight)
 			.saturating_add(DbWeight::get().writes(1 as Weight))
 	}
 }
