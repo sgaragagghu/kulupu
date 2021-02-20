@@ -65,7 +65,7 @@ pub trait GenerateRewardLocks<T: Config> {
 		lock_parameters: Option<LockParameters>,
 	) -> BTreeMap<T::BlockNumber, BalanceOf<T>>;
 
-	fn max_locks() -> u32;
+	fn max_locks(lock_bounds: LockBounds) -> u32;
 }
 
 impl<T: Config> GenerateRewardLocks<T> for () {
@@ -77,7 +77,7 @@ impl<T: Config> GenerateRewardLocks<T> for () {
 		Default::default()
 	}
 
-	fn max_locks() -> u32 {
+	fn max_locks(_lock_bounds: LockBounds) -> u32 {
 		0
 	}
 }

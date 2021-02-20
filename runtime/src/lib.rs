@@ -31,7 +31,7 @@ extern crate system as frame_system;
 #[cfg(feature = "std")]
 include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
-use sp_std::{collections::btree_map::BTreeMap, cmp::{min, max}, prelude::*};
+use sp_std::{collections::btree_map::BTreeMap, cmp::{min, max}, prelude::*, cmp};
 use codec::{Encode, Decode};
 use sp_core::{OpaqueMetadata, u32_trait::{_1, _2, _4, _5}};
 use sp_runtime::{
@@ -365,16 +365,17 @@ impl rewards::GenerateRewardLocks<Runtime> for GenerateRewardLocks {
 		locks
 	}
 
-	fn max_locks() -> u32 {
-		// Max locks when for 10 consecutive days, 10 incremental locks are created.
-		100
+	fn max_locks(lock_bounds: rewards::LockBounds) -> u32 {
+		// Max locks when a miner mines at least on block every day till the period of the first
+        // mined block ends.
+		cmp::max(100, u32::from(lock_bounds.period_max))
 	}
 }
 
 parameter_types! {
 	pub DonationDestination: AccountId = Treasury::account_id();
 	pub const LockBounds: rewards::LockBounds = rewards::LockBounds {period_max: 500, period_min: 20,
-																divide_max: 50, divide_min: 2};
+																	divide_max: 50, divide_min: 2};
 }
 
 impl rewards::Config for Runtime {

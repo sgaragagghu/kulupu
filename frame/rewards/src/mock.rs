@@ -29,7 +29,7 @@ use sp_runtime::{
 	Digest, traits::{BlakeTwo256, IdentityLookup}, testing::{DigestItem, Header},
 };
 use frame_system::{self as system, InitKind};
-use sp_std::collections::btree_map::BTreeMap;
+use sp_std::{collections::btree_map::BTreeMap, cmp};
 
 type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Test>;
 type Block = frame_system::mocking::MockBlock<Test>;
@@ -130,16 +130,17 @@ impl crate::GenerateRewardLocks<Test> for GenerateRewardLocks {
 		locks
 	}
 
-	fn max_locks() -> u32 {
-		// Max locks when one unlocks everyday for the `TOTAL_LOCK_PERIOD`.
-		100
+	fn max_locks(lock_bounds: pallet_rewards::LockBounds) -> u32 {
+		// Max locks when a miner mines at least on block every day till the period of the first
+        // mined block ends.
+		cmp::max(100, u32::from(lock_bounds.period_max))
 	}
 }
 
 parameter_types! {
 	pub DonationDestination: u64 = 255;
 	pub const LockBounds: pallet_rewards::LockBounds = pallet_rewards::LockBounds {period_max: 500, period_min: 20,
-											divide_max: 50, divide_min: 2};
+																					divide_max: 50, divide_min: 2};
 }
 
 impl pallet_rewards::Config for Test {
