@@ -87,6 +87,7 @@ pub trait WeightInfo {
 	fn on_finalize() -> Weight;
 	fn unlock() -> Weight;
 	fn set_schedule() -> Weight;
+	fn set_lock_params() -> Weight;
 }
 
 /// Config for rewards.
@@ -273,7 +274,7 @@ decl_module! {
 			Self::deposit_event(RawEvent::ScheduleSet);
 		}
 
-		#[weight = 0]
+		#[weight = T::WeightInfo::set_lock_params()]
 		fn set_lock_params(origin, lock_params: LockParameters) {
 			ensure_root(origin)?;
 

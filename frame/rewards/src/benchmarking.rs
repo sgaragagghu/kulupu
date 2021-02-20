@@ -74,7 +74,7 @@ benchmarks! {
 		Reward::<T>::put(reward);
 
 		// Create existing locks on author.
-		let max_locks = T::GenerateRewardLocks::max_locks();
+		let max_locks = T::GenerateRewardLocks::max_locks(T::LockParametersBounds::get());
 		create_locks::<T>(&author, max_locks);
 
 		// Move to a point where all locks would unlock.
@@ -111,7 +111,7 @@ benchmarks! {
 	// Worst case: a new lock params is set.
 	set_lock_params {
 
-	}: _(RawOrigin::Root, LockParameters {period: 150, divide: 25} );
+	}: _(RawOrigin::Root, LockParameters {period: 150, divide: 25} )
 }
 
 #[cfg(test)]

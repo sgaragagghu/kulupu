@@ -366,8 +366,8 @@ impl rewards::GenerateRewardLocks<Runtime> for GenerateRewardLocks {
 	}
 
 	fn max_locks(lock_bounds: rewards::LockBounds) -> u32 {
-		// Max locks when a miner mines at least on block every day till the period of the first
-        // mined block ends.
+		// Max locks when a miner mines at least on block every day till the lock period of
+		// the first mined block ends.
 		cmp::max(100, u32::from(lock_bounds.period_max))
 	}
 }
