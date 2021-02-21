@@ -47,9 +47,10 @@ pub fn clamp(actual: u128, goal: u128, clamp_factor: u128) -> u128 {
 	max(goal / clamp_factor, min(actual, goal * clamp_factor))
 }
 
-pub trait Config: pallet_timestamp::Config {
+pub trait Config: pallet_timestamp::Config { //configuring another pallet...!
 	/// Target block time in millseconds.
-	type TargetBlockTime: Get<Self::Moment>;
+	type TargetBlockTime: Get<Self::Moment>; //Moment is defined there, in pallet_timestamp
+	// ^^^^^^ it`s new.... there isnt in normal pallet_timestamp
 }
 
 decl_storage! {
@@ -68,6 +69,8 @@ decl_storage! {
 }
 
 decl_module! {
+	// instead of calls here there is just a const...
+	// IT IS a call! it is a const! COOL.
 	pub struct Module<T: Config> for enum Call where origin: T::Origin {
 		/// Target block time in milliseconds.
 		const TargetBlockTime: T::Moment = T::TargetBlockTime::get();
@@ -85,7 +88,7 @@ impl<T: Config> OnTimestampSet<T::Moment> for Module<T> {
 		// getting from storage
 		let mut data = PastDifficultiesAndTimestamps::<T>::get();
 
-		// shifting the array losing the oldest. i'm kinda making space for a new ... element?
+		// shifting the array losing the oldest. it is kinda making space for a new ... element?
 		for i in 1..data.len() {
 			data[i - 1] = data[i];
 		}
@@ -108,6 +111,7 @@ impl<T: Config> OnTimestampSet<T::Moment> for Module<T> {
 			ts_delta += delta;
 		}
 
+		// sum of all of the differences between timestamps. (betweeen blocks basically)
 		if ts_delta == 0 {
 			ts_delta = 1;
 		}
@@ -118,14 +122,15 @@ impl<T: Config> OnTimestampSet<T::Moment> for Module<T> {
 				Some(diff) => diff,
 				None => InitialDifficulty::get(),
 			};
-			diff_sum += diff;
+			diff_sum += diff; // just summing all of the diff
 		}
 
-		if diff_sum < U256::from(MIN_DIFFICULTY) {
+		if diff_sum < U256::from(MIN_DIFFICULTY) { // minimum...
 			diff_sum = U256::from(MIN_DIFFICULTY);
 		}
 
 		// adjust time delta toward goal subject to dampening and clamping
+		// just the diff algo, not much iportant to understand it now.
 		let adj_ts = clamp(
 			damp(ts_delta, block_time_window, DIFFICULTY_DAMP_FACTOR),
 			block_time_window,
@@ -133,11 +138,11 @@ impl<T: Config> OnTimestampSet<T::Moment> for Module<T> {
 		);
 
 		// minimum difficulty avoids getting stuck due to dampening
-		let difficulty = min(U256::from(MAX_DIFFICULTY),
-							 max(U256::from(MIN_DIFFICULTY),
-								 diff_sum * U256::from(block_time) / U256::from(adj_ts)));
+		let difficulty = min(U256::from(MAX_DIFFICULTY), // just putting the MAX_DIFFICULTY as upperdbound
+							 max(U256::from(MIN_DIFFICULTY), // putting MIN_DIFFICULTY as lowerbound
+								 diff_sum * U256::from(block_time) / U256::from(adj_ts))); //algo..
 
-		<PastDifficultiesAndTimestamps<T>>::put(data);
-		<CurrentDifficulty>::put(difficulty);
+		<PastDifficultiesAndTimestamps<T>>::put(data); // saving past diff n timestamps...
+		<CurrentDifficulty>::put(difficulty); // saving current difficulty
 	}
 }
