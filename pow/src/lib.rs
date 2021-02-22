@@ -87,14 +87,15 @@ pub fn key_hash<B, C>(
 	let parent_number = UniqueSaturatedInto::<u64>::unique_saturated_into(*parent_header.number()); // Number is.. the header number. But not sure what is it..
 											// could it be the block number ?  i still dont know at this point 
 
-	let mut key_number = parent_number.saturating_sub(parent_number % PERIOD);
-	if parent_number.saturating_sub(key_number) < OFFSET {
-		key_number = key_number.saturating_sub(PERIOD);
+	let mut key_number = parent_number.saturating_sub(parent_number % PERIOD); // parent number - (parent_numberModuloPeriod)...
+	if parent_number.saturating_sub(key_number) < OFFSET { 	// basically it is  (parent number -  (parent_number - (parent_numberModPeriod))) 
+								// that`s basically parent_numberModPeriod < offset
+		key_number = key_number.saturating_sub(PERIOD); // parent number - (parent_numberModuloPeriod) - (period)
 	}
 
 	let mut current = parent_header;
 	while UniqueSaturatedInto::<u64>::unique_saturated_into(*current.number()) != key_number {
-		current = client.header(BlockId::Hash(*current.parent_hash()))
+		current = client.header(BlockId::Hash(*current.parent_hash())) // i guess going back through the chain`s headers
 			.map_err(|e| sc_consensus_pow::Error::Environment(
 				format!("Client execution error: {:?}", e)
 			))?
@@ -111,6 +112,12 @@ pub enum RandomXAlgorithmVersion {
 	V2,
 }
 
+// A thread-safe reference-counting pointer. 'Arc' stands for 'Atomically Reference Counted'.
+// The type Arc<T> provides shared ownership of a value of type T, 
+// allocated in the heap. Invoking clone on Arc produces a new Arc instance, 
+// which points to the same allocation on the heap as the source Arc, 
+// while increasing a reference count. When the last Arc pointer to a given allocation is destroyed, 
+// the value stored in that allocation (often referred to as "inner value") is also dropped.
 pub struct RandomXAlgorithm<C> {
 	client: Arc<C>,
 }
@@ -135,26 +142,32 @@ impl<B: BlockT<Hash=H256>, C> PowAlgorithm<B> for RandomXAlgorithm<C> where
 	C: HeaderBackend<B> + AuxStore + ProvideRuntimeApi<B>,
 	C::Api: DifficultyApi<B, Difficulty> + AlgorithmApi<B>,
 {
-	type Difficulty = Difficulty;
+	type Difficulty = Difficulty; // associated type
+// With associated types, we don’t need to annotate types because we can’t implement 
+// a trait on a type multiple times. In Listing 19-12 with the definition that uses associated types, 
+// we can only choose what the type of Item will be once, because there can only be one impl Iterator for Counter. 
+// We don’t have to specify that we want an iterator of u32 values everywhere that we call next on Counter.
 
+	// getting the difficult of the `last?` block
 	fn difficulty(&self, parent: H256) -> Result<Difficulty, sc_consensus_pow::Error<B>> {
-		let difficulty = self.client.runtime_api().difficulty(&BlockId::Hash(parent))
-			.map_err(|e| sc_consensus_pow::Error::Environment(
+		let difficulty = self.client.runtime_api().difficulty(&BlockId::Hash(parent)) // TODO understand
+			.map_err(|e| sc_consensus_pow::Error::Environment( // mapping every error to sc_consensus_pow::Error::Environment
 				format!("Fetching difficulty from runtime failed: {:?}", e)
 			));
 
 		difficulty
 	}
 
-	fn break_tie(
+	fn break_tie( // TODO understsand... where is it used ?
 		&self,
 		own_seal: &RawSeal,
 		new_seal: &RawSeal,
 	) -> bool {
+		// blake2 just is doing the has of the seal...
 		blake2_256(&own_seal[..]) > blake2_256(&new_seal[..])
 	}
 
-	fn verify(
+	fn verify( // TODO understand, perhaps it is verifying block to import them... i guess
 		&self,
 		parent: &BlockId<B>,
 		pre_hash: &H256,
