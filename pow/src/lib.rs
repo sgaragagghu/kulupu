@@ -48,10 +48,12 @@ pub mod app {
 
 /// Checks whether the given hash is above difficulty.
 pub fn is_valid_hash(hash: &H256, difficulty: Difficulty) -> bool {
-	let num_hash = U256::from(&hash[..]);
-	let (_, overflowed) = num_hash.overflowing_mul(difficulty);
-
-	!overflowed
+	let num_hash = U256::from(&hash[..]); // i guess normal conversion from a hash type to a unsigned normal number...
+	//  returns (a * b) mod 2^N (N in this case must be 256..)
+	let (_, overflowed) = num_hash.overflowing_mul(difficulty); // _ is the multiplication and overflowed is a bool...
+	// it makes sense, higher difficulty means i have to find a smaller hash!
+	
+	!overflowed // if has not overflowed is valid...
 }
 
 pub fn key_hash<B, C>(
@@ -59,19 +61,31 @@ pub fn key_hash<B, C>(
 	parent: &BlockId<B>
 ) -> Result<H256, sc_consensus_pow::Error<B>> where
 	B: BlockT<Hash=H256>,
-	C: HeaderBackend<B>,
+	C: HeaderBackend<B>, // Blockchain database header backend. Does not perform any validation.
 {
 	const PERIOD: u64 = 4096; // ~2.8 days
 	const OFFSET: u64 = 128;  // 2 hours
+	
+// The header is omething which fulfills the abstract idea of a Substrate header. 
+// It has types for a Number, a Hash and a Hashing. It provides access to an extrinsics_root, 
+// state_root and parent_hash, as well as a digest and a block number.
 
-	let parent_header = client.header(*parent)
-		.map_err(|e| sc_consensus_pow::Error::Environment(
+
+	// pub fn header(&self, id: BlockId<Block>) -> Result<Option<Block::Header>>
+	let parent_header = client.header(*parent) // get the header of the parent block
+		.map_err(|e| sc_consensus_pow::Error::Environment( // remapping every error to this error sc_consensus_pow::Error::Environment
 			format!("Client execution error: {:?}", e)
-		))?
-		.ok_or(sc_consensus_pow::Error::Environment(
+		))? // if Ok then unwrap, if err then return!
+		// Transforms the Option<T> into a Result<T, E>, mapping Some(v) to Ok(v) and None to Err(err).
+		.ok_or(sc_consensus_pow::Error::Environment( // throwing this error bsically, in this case it will return..
 			"Parent header not found".to_string()
-		))?;
-	let parent_number = UniqueSaturatedInto::<u64>::unique_saturated_into(*parent_header.number());
+		))?; // if some thn unwrap, if none then return!
+	// Just like Into except that if the source value is too big to fit into the destination type then it'll saturate the destination.
+	// But consume self! (the `caller`)
+	// As you know in rust, you have the ownership principles, which define that a function that owns the variable, 
+	// will destroy it at the end. So consumption is this process, of owning something and dropping it.
+	let parent_number = UniqueSaturatedInto::<u64>::unique_saturated_into(*parent_header.number()); // Number is.. the header number. But not sure what is it..
+											// could it be the block number ?  i still dont know at this point 
 
 	let mut key_number = parent_number.saturating_sub(parent_number % PERIOD);
 	if parent_number.saturating_sub(key_number) < OFFSET {
