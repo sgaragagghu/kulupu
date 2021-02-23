@@ -226,11 +226,13 @@ impl<B: BlockT<Hash=H256>, C> PowAlgorithm<B> for RandomXAlgorithm<C> where
 				Ok(true)
 			}, // ~~~~~~~~~~~~~~~ finish V1 ~~~~~~~~~~~~~~
 			RandomXAlgorithmVersion::V2 => {
+				// decoding seal as before
 				let seal = match SealV2::decode(&mut &seal[..]) {
 					Ok(seal) => seal,
 					Err(_) => return Ok(false),
 				};
-
+				
+				// as before
 				let compute = ComputeV2 {
 					key_hash,
 					difficulty,
@@ -238,16 +240,19 @@ impl<B: BlockT<Hash=H256>, C> PowAlgorithm<B> for RandomXAlgorithm<C> where
 					nonce: seal.nonce,
 				};
 
+				// V2 needs the pre digest
 				let pre_digest = match pre_digest {
 					Some(pre_digest) => pre_digest,
 					None => return Ok(false),
 				};
 
+				// decoding the author (it-s the public key)
 				let author = match app::Public::decode(&mut &pre_digest[..]) {
 					Ok(author) => author,
 					Err(_) => return Ok(false),
 				};
 
+				// sealv2 contains the signature... it`s the signed mining...!
 				if !compute.verify(&seal.signature, &author) {
 					return Ok(false)
 				}
@@ -257,11 +262,11 @@ impl<B: BlockT<Hash=H256>, C> PowAlgorithm<B> for RandomXAlgorithm<C> where
 					ComputeMode::Sync,
 				);
 
-				if computed_seal != seal {
+				if computed_seal != seal { // not really computed, just deducted. as before
 					return Ok(false)
 				}
 
-				if !is_valid_hash(&computed_work, difficulty) {
+				if !is_valid_hash(&computed_work, difficulty) { // we can study it later, basically calling randomX to compute the hash.
 					return Ok(false)
 				}
 
@@ -271,14 +276,14 @@ impl<B: BlockT<Hash=H256>, C> PowAlgorithm<B> for RandomXAlgorithm<C> where
 	}
 }
 
-pub struct Stats {
+pub struct Stats { // for displaying the hashrte and such things.
 	last_clear: Instant,
 	last_display: Instant,
 	round: u32,
 }
 
 impl Stats {
-	pub fn new() -> Stats {
+	pub fn new() -> Stats { // constructor
 		Self {
 			last_clear: Instant::now(),
 			last_display: Instant::now(),
@@ -302,11 +307,11 @@ pub fn mine<B, C>(
 	C::Api: DifficultyApi<B, Difficulty> + AlgorithmApi<B>,
 {
 	let version_raw = client.runtime_api().identifier(parent)
-		.map_err(|e| sc_consensus_pow::Error::Environment(
+		.map_err(|e| sc_consensus_pow::Error::Environment( // getting algorithm version from the parents...
 			format!("Fetching identifier from runtime failed: {:?}", e))
 		)?;
 
-	let version = match version_raw {
+	let version = match version_raw { // mapping...
 		kulupu_primitives::ALGORITHM_IDENTIFIER_V1 => RandomXAlgorithmVersion::V1,
 		kulupu_primitives::ALGORITHM_IDENTIFIER_V2 => RandomXAlgorithmVersion::V2,
 		_ => return Err(sc_consensus_pow::Error::<B>::Other(
@@ -314,23 +319,24 @@ pub fn mine<B, C>(
 		)),
 	};
 
-	let mut rng = SmallRng::from_rng(&mut thread_rng())
+	let mut rng = SmallRng::from_rng(&mut thread_rng()) // it-s passing a function... mmm something like that function is called and creates a random number
+							    // from_rng create an PRNG seeded from a random number, which should be created by that function.
 		.map_err(|e| sc_consensus_pow::Error::Environment(
 			format!("Initialize RNG failed for mining: {:?}", e)
 		))?;
-	let key_hash = key_hash(client, parent)?;
+	let key_hash = key_hash(client, parent)?; // TODO still must understand...
 
-	let pre_digest = pre_digest.ok_or(sc_consensus_pow::Error::<B>::Other(
+	let pre_digest = pre_digest.ok_or(sc_consensus_pow::Error::<B>::Other( // pre digest... things seens before are signed with public key
 		"Unable to mine: pre-digest not set".to_string(),
 	))?;
 
-	let author = app::Public::decode(&mut &pre_digest[..]).map_err(|_| {
+	let author = app::Public::decode(&mut &pre_digest[..]).map_err(|_| { // decoding the pre digest (getting the author that-s just the piblic key)
 		sc_consensus_pow::Error::<B>::Other(
 			"Unable to mine: author pre-digest decoding failed".to_string(),
 		)
 	})?;
 
-	let pair = keystore.key_pair::<app::Pair>(
+	let pair = keystore.key_pair::<app::Pair>( // trying to get the pair public private...
 		&author,
 	).map_err(|_| sc_consensus_pow::Error::<B>::Other(
 		"Unable to mine: fetch pair from author failed".to_string(),
