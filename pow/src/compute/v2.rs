@@ -92,7 +92,12 @@ impl ComputeV2 {
 		signature: &app::Signature,
 		public: &app::Public,
 	) -> bool {
-		let hash = self.signing_message();
+		let hash = self.signing_message(); //the signed message is just the difficulty, prehash, nonce into a struct
+		//fn verify<P: AsRef<Self::Public>, M: AsRef<[u8]>>(
+		//    sig: &Self::Signature,
+		//    message: M,
+		//    pubkey: P
+		//) -> bool
 		app::Pair::verify(
 			signature,
 			&hash[..],
