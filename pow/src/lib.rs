@@ -195,7 +195,9 @@ impl<B: BlockT<Hash=H256>, C> PowAlgorithm<B> for RandomXAlgorithm<C> where
 				// like what we`ve done for identifier but here for the seal that-s raw too
 				// but this is a struct so a little more complex and we don-t have the raw to compare it like before
 				// we must use the automatically derived decode
-				let seal = match SealV1::decode(&mut &seal[..]) {
+				let seal = match SealV1::decode(&mut &seal[..]) { // [..] is a range operator, means every object in the array, string, iterator..
+										  /// in this case i guess decode can take something like a vector of seals...
+										  // we have one seal here anyway
 					Ok(seal) => seal,
 					Err(_) => return Ok(false), // ok, here we are BREAKING the function and the match too
 								    //  and returning Ok(false) - now it makes sense
