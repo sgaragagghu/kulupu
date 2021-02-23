@@ -148,7 +148,7 @@ impl<B: BlockT<Hash=H256>, C> PowAlgorithm<B> for RandomXAlgorithm<C> where
 // we can only choose what the type of Item will be once, because there can only be one impl Iterator for Counter. 
 // We don’t have to specify that we want an iterator of u32 values everywhere that we call next on Counter.
 
-	// getting the difficult of the `last?` block
+	// getting the difficulty of the `last?` block
 	fn difficulty(&self, parent: H256) -> Result<Difficulty, sc_consensus_pow::Error<B>> {
 		let difficulty = self.client.runtime_api().difficulty(&BlockId::Hash(parent)) // TODO understand
 			.map_err(|e| sc_consensus_pow::Error::Environment( // mapping every error to sc_consensus_pow::Error::Environment
@@ -175,15 +175,15 @@ impl<B: BlockT<Hash=H256>, C> PowAlgorithm<B> for RandomXAlgorithm<C> where
 		seal: &RawSeal,
 		difficulty: Difficulty,
 	) -> Result<bool, sc_consensus_pow::Error<B>> {
-		let version_raw = self.client.runtime_api().identifier(parent)
+		let version_raw = self.client.runtime_api().identifier(parent) // fetching identifier.. which is something like algorithm version
 			.map_err(|e| sc_consensus_pow::Error::Environment(
 				format!("Fetching identifier from runtime failed: {:?}", e))
 			)?;
 
-		let version = match version_raw {
+		let version = match version_raw { // mapping to the normal enum
 			kulupu_primitives::ALGORITHM_IDENTIFIER_V1 => RandomXAlgorithmVersion::V1,
 			kulupu_primitives::ALGORITHM_IDENTIFIER_V2 => RandomXAlgorithmVersion::V2,
-			_ => return Err(sc_consensus_pow::Error::<B>::Other(
+			_ => return Err(sc_consensus_pow::Error::<B>::Other( // default
 				"Unknown algorithm identifier".to_string(),
 			)),
 		};
@@ -191,33 +191,38 @@ impl<B: BlockT<Hash=H256>, C> PowAlgorithm<B> for RandomXAlgorithm<C> where
 		let key_hash = key_hash(self.client.as_ref(), parent)?;
 
 		match version {
-			RandomXAlgorithmVersion::V1 => {
+			RandomXAlgorithmVersion::V1 => { // !!!!!! V1 start ~~`````````~~~~~~~~~~
+				// like what we`ve done for identifier but here for the seal that-s raw too
+				// but this is a struct so a little more complex and we don-t have the raw to compare it like before
+				// we must use the automatically derived decode
 				let seal = match SealV1::decode(&mut &seal[..]) {
 					Ok(seal) => seal,
-					Err(_) => return Ok(false),
+					Err(_) => return Ok(false), // ok, here we are BREAKING the function and the match too
+								    //  and returning Ok(false) - now it makes sense
 				};
 
 				let compute = ComputeV1 {
 					key_hash,
-					difficulty,
+					difficulty, // %
 					pre_hash: *pre_hash,
-					nonce: seal.nonce,
+					nonce: seal.nonce, // %
 				};
 
 				// No pre-digest check is needed for V1 algorithm.
 
-				let (computed_seal, computed_work) = compute.seal_and_work(ComputeMode::Sync);
+				let (computed_seal, computed_work) = compute.seal_and_work(ComputeMode::Sync); // ComputeMode::Sync is just an enum, that probably
+														// means we are in syncing mode, other is Mining
 
-				if computed_seal != seal {
+				if computed_seal != seal { // not really computed, just deducted from there %
 					return Ok(false)
 				}
 
-				if !is_valid_hash(&computed_work, difficulty) {
+				if !is_valid_hash(&computed_work, difficulty) { // we can study it later, basically calling randomX to compute the hash.
 					return Ok(false)
 				}
 
 				Ok(true)
-			},
+			}, // ~~~~~~~~~~~~~~~ finish V1 ~~~~~~~~~~~~~~
 			RandomXAlgorithmVersion::V2 => {
 				let seal = match SealV2::decode(&mut &seal[..]) {
 					Ok(seal) => seal,
