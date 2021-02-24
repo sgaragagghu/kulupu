@@ -89,6 +89,7 @@ fn need_new_vm<M: randomx::WithCacheMode>(
 	need_new_vm
 }
 
+// TODO understand what's happening here. I guess it's mining, it's the interface between rust and c++ randomX
 fn loop_raw_with_cache<M: randomx::WithCacheMode, FPre, I, FValidate, R>(
 	key_hash: &H256,
 	machine: &RefCell<Option<(H256, randomx::VM<M>)>>,
@@ -184,7 +185,7 @@ fn loop_raw_with_cache<M: randomx::WithCacheMode, FPre, I, FValidate, R>(
 
 pub fn loop_raw<FPre, I, FValidate, R>(
 	key_hash: &H256,
-	mode: ComputeMode,
+	mode: ComputeMode, // mode...
 	f_pre: FPre,
 	f_validate: FValidate,
 	round: usize,
@@ -193,15 +194,17 @@ pub fn loop_raw<FPre, I, FValidate, R>(
 	FValidate: Fn(H256, I) -> Loop<Option<R>>,
 {
 	match mode {
-		ComputeMode::Mining =>
+		ComputeMode::Mining => // mining...
 			FULL_MACHINE.with(|machine| {
 				loop_raw_with_cache::<randomx::WithFullCacheMode, _, _, _, _>(
-					key_hash,
-					machine,
-					&FULL_SHARED_CACHES,
-					f_pre,
-					f_validate,
-					round,
+					key_hash, // the famouse kayhash... it's just the hash of an 'old' block (still must understand the meaning...)
+					machine, // closure object
+					&FULL_SHARED_CACHES, 
+					f_pre, // more or less is the ComputeV1 struct. i guess it's a callback to 
+						// create the computeV1. Definitely... it's callef f_!
+					f_validate, // callback to decide if wehave to break mining ()cause we've got above the target difficulty
+						   // or continue...
+					round, // just a mining parameter
 				)
 			}),
 		ComputeMode::Sync => {
