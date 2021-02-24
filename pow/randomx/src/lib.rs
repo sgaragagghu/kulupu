@@ -16,18 +16,20 @@
 // You should have received a copy of the GNU General Public License
 // along with Kulupu. If not, see <http://www.gnu.org/licenses/>.
 
+// A thread-safe reference-counting pointer. 'Arc' stands for 'Atomically Reference Counted'.
+// The type Arc<T> provides shared ownership of a value of type T, allocated in the heap. 
 use std::sync::Arc;
-use std::marker::PhantomData;
+use std::marker::PhantomData; // doesn't do anything - it's just a way to communicate to the compiler that you are using data in a certain way
 
 pub const HASH_SIZE: usize = sys::RANDOMX_HASH_SIZE as usize;
 
 pub struct Config {
 	pub large_pages: bool,
-	pub secure: bool,
+	pub secure: bool, // TODO what-s this ?
 }
 
 impl Config {
-	pub const fn new() -> Self {
+	pub const fn new() -> Self { %
 		Config {
 			large_pages: false,
 			secure: false,
@@ -36,12 +38,12 @@ impl Config {
 }
 
 impl Default for Config {
-	fn default() -> Self {
+	fn default() -> Self { // using % as deafult
 		Config::new()
 	}
 }
 
-pub enum CacheMode {
+pub enum CacheMode { //cache modes TODO understadnd what-s the meaning
 	Full,
 	Light,
 }
@@ -56,7 +58,8 @@ pub enum WithFullCacheMode { }
 unsafe impl WithCacheMode for WithFullCacheMode {
 	fn has_dataset() -> bool { true }
 	fn randomx_flags(config: &Config) -> sys::randomx_flags {
-		unsafe {
+		unsafe { // TODO why is unsafe needed here?
+			// creating the flags... bitwise OR
 			let mut flags = sys::randomx_get_flags() | sys::randomx_flags_RANDOMX_FLAG_FULL_MEM;
 			if config.large_pages {
 				flags = flags | sys::randomx_flags_RANDOMX_FLAG_LARGE_PAGES
@@ -71,6 +74,7 @@ unsafe impl WithCacheMode for WithFullCacheMode {
 	fn description() -> &'static str { "full" }
 }
 
+// No large pages here... 
 pub enum WithLightCacheMode { }
 unsafe impl WithCacheMode for WithLightCacheMode {
 	fn has_dataset() -> bool { false }
@@ -86,14 +90,21 @@ unsafe impl WithCacheMode for WithLightCacheMode {
 	fn description() -> &'static str { "light" }
 }
 
+// It's the same as using PhantomData for a generic type: to make the struct act 
+// as if it contains a reference even though the compiler doesn't see one in the struct definition.
+
+// A big reason you'd use this is to represent related lifetimes when dealing with FFI types, 
+// but it's useful any time where you want the protection provided by lifetimes but you don't actually have 
+// something to take a reference of.
+
 pub struct Cache<M: WithCacheMode> {
 	cache_ptr: *mut sys::randomx_cache,
 	dataset_ptr: Option<*mut sys::randomx_dataset>,
 	_marker: PhantomData<M>,
 }
 
-pub type FullCache = Cache<WithFullCacheMode>;
-pub type LightCache = Cache<WithLightCacheMode>;
+pub type FullCache = Cache<WithFullCacheMode>; // aliasing
+pub type LightCache = Cache<WithLightCacheMode>; // aliasing
 
 unsafe impl<M: WithCacheMode> Send for Cache<M> { }
 unsafe impl<M: WithCacheMode> Sync for Cache<M> { }
