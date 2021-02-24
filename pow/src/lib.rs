@@ -191,6 +191,7 @@ impl<B: BlockT<Hash=H256>, C> PowAlgorithm<B> for RandomXAlgorithm<C> where
 		let key_hash = key_hash(self.client.as_ref(), parent)?;
 
 		match version {
+			// old version without signed minig.
 			RandomXAlgorithmVersion::V1 => { // !!!!!! V1 start ~~`````````~~~~~~~~~~
 				// like what we`ve done for identifier but here for the seal that-s raw too
 				// but this is a struct so a little more complex and we don-t have the raw to compare it like before
@@ -259,7 +260,7 @@ impl<B: BlockT<Hash=H256>, C> PowAlgorithm<B> for RandomXAlgorithm<C> where
 
 				let (computed_seal, computed_work) = compute.seal_and_work(
 					seal.signature.clone(),
-					ComputeMode::Sync,
+					ComputeMode::Sync, // syncing
 				);
 
 				if computed_seal != seal { // not really computed, just deducted. as before
@@ -359,11 +360,12 @@ pub fn mine<B, C>(
 
 					(compute.input().encode(), compute) // TODO understand what is compute.input()... but should be just some kind of representation.
 				},
-				|work, compute| { // 
+				|work, compute| { // call back
 					if is_valid_hash(&work, compute.difficulty) { // if the hash is ablove difficulty then stop
 										      // TODO understand from where is work hash coming from....!!
 										      // Probably i guess these lambda functions are just callbacks...
-						let seal = compute.seal();
+						
+						let seal = compute.seal(); // contains nonce, difficulty
 						compute::Loop::Break(Some(seal.encode()))
 					} else {
 						compute::Loop::Continue // otherwise continue
@@ -372,10 +374,11 @@ pub fn mine<B, C>(
 				round as usize, // just a mining parameter
 			)
 		},
-		RandomXAlgorithmVersion::V2 => {
+		RandomXAlgorithmVersion::V2 => { // signed mining i guess, so V1 is not used rn
+			// everything as above
 			compute::loop_raw(
 				&key_hash,
-				ComputeMode::Mining,
+				ComputeMode::Mining, // callback
 				|| {
 					let nonce = H256::random_using(&mut rng);
 
@@ -386,24 +389,25 @@ pub fn mine<B, C>(
 						nonce,
 					};
 
-					let signature = compute.sign(&pair);
+					let signature = compute.sign(&pair); // signing with our priv.key
 
-					(compute.input(signature.clone()).encode(), (compute, signature))
+					(compute.input(signature.clone()).encode(), (compute, signature)) // different cause now 
+													  // it-s giving the signature...
 				},
-				|work, (compute, signature)| {
-					if is_valid_hash(&work, difficulty) {
-						let seal = compute.seal(signature);
-						compute::Loop::Break(Some(seal.encode()))
+				|work, (compute, signature)| { // signing.
+					if is_valid_hash(&work, difficulty) { // checking if we can stop to mine cause we got an above difficulty `block`
+						let seal = compute.seal(signature); // contains nonce, difficulty and signature
+						compute::Loop::Break(Some(seal.encode())) // break mining
 					} else {
-						compute::Loop::Continue
+						compute::Loop::Continue // conitnue
 					}
 				},
-				round as usize,
+				round as usize, // mining parameter
 			)
 		},
 	};
 
-	let now = Instant::now();
+	let now = Instant::now(); // now timestamp i guess.
 
 	let maybe_display = {
 		let mut stats = stats.lock();
