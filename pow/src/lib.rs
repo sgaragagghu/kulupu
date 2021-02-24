@@ -343,11 +343,11 @@ pub fn mine<B, C>(
 	))?;
 
 	let maybe_seal = match version {
-		RandomXAlgorithmVersion::V1 => {
+		RandomXAlgorithmVersion::V1 => { // if V1...
 			compute::loop_raw(
 				&key_hash,
 				ComputeMode::Mining,
-				|| {
+				|| { // lamba function... to calculate the parameter of the function! i guess those are callbacks, they are not evaluated now.
 					let nonce = H256::random_using(&mut rng);
 
 					let compute = ComputeV1 {
@@ -357,17 +357,19 @@ pub fn mine<B, C>(
 						nonce,
 					};
 
-					(compute.input().encode(), compute)
+					(compute.input().encode(), compute) // TODO understand what is compute.input()... but should be just some kind of representation.
 				},
-				|work, compute| {
-					if is_valid_hash(&work, compute.difficulty) {
+				|work, compute| { // 
+					if is_valid_hash(&work, compute.difficulty) { // if the hash is ablove difficulty then stop
+										      // TODO understand from where is work hash coming from....!!
+										      // Probably i guess these lambda functions are just callbacks...
 						let seal = compute.seal();
 						compute::Loop::Break(Some(seal.encode()))
 					} else {
-						compute::Loop::Continue
+						compute::Loop::Continue // otherwise continue
 					}
 				},
-				round as usize,
+				round as usize, // just a mining parameter
 			)
 		},
 		RandomXAlgorithmVersion::V2 => {
