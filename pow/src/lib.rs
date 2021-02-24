@@ -410,9 +410,10 @@ pub fn mine<B, C>(
 	let now = Instant::now(); // now timestamp i guess.
 
 	let maybe_display = {
-		let mut stats = stats.lock();
-		let since_last_clear = now.checked_duration_since(stats.last_clear);
-		let since_last_display = now.checked_duration_since(stats.last_display);
+		let mut stats = stats.lock(); // seems like a mutex.. it should be release at the end of the block anyway
+		// Returns the amount of time elapsed from another instant to this one, or None if that instant is later than this one.
+		let since_last_clear = now.checked_duration_since(stats.last_clear); // calculate time elapsed since last time
+		let since_last_display = now.checked_duration_since(stats.last_display); // calculate time elapsed since last time
 
 		if let (Some(since_last_clear), Some(since_last_display)) =
 			(since_last_clear, since_last_display)
@@ -422,7 +423,9 @@ pub fn mine<B, C>(
 			stats.round += round;
 			let duration = since_last_clear;
 
-			let clear = duration >= Duration::new(600, 0);
+			let clear = duration >= Duration::new(600, 0); // if duration is bigger than 600s
+			// clear || since_last_display >= Duration::new(2, 0) display it every 2 seconds or if it going to be cleared AND
+			// AND from last duration must have elapsed at least 1 secons (cause as_secs return only integer)
 			let display = (clear || since_last_display >= Duration::new(2, 0)) && duration.as_secs() > 0;
 
 			if display {
@@ -447,19 +450,19 @@ pub fn mine<B, C>(
 	};
 
 	if let Some((duration, round)) = maybe_display {
-		let hashrate = round / duration.as_secs() as u32;
-		let network_hashrate = difficulty / U256::from(60);
+		let hashrate = round / duration.as_secs() as u32; // rounds are how many hashrate it does for each `round` so.
+		let network_hashrate = difficulty / U256::from(60); // network hashrate...
 
-		if hashrate == 0 {
-			info!(
+		if hashrate == 0 { //
+			info!( // printing
 				target: "kulupu-pow",
 				"Local hashrate: {} H/s, network hashrate: {} H/s",
 				hashrate,
 				network_hashrate,
 			);
-		} else {
-			let every: u32 = (network_hashrate / U256::from(hashrate)).unique_saturated_into();
-			let every_duration = Duration::new(60, 0) * every;
+		} else { // 
+			let every: u32 = (network_hashrate / U256::from(hashrate)).unique_saturated_into(); // i1l get a block every `EVERY` blocks
+			let every_duration = Duration::new(60, 0) * every; // each block is 60secs
 			info!(
 				target: "kulupu-pow",
 				"Local hashrate: {} H/s, network hashrate: {} H/s, expected one block every {} ({} blocks)",
