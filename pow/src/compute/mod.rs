@@ -34,6 +34,9 @@ use once_cell::sync::OnceCell;
 use kulupu_randomx as randomx;
 use kulupu_primitives::Difficulty;
 
+// Using this macro, it is possible to have statics that require code to be executed at
+// runtime in order to be initialized. This includes anything requiring heap allocations, 
+// like vectors or hash maps, as well as anything that requires function calls to be computed.
 lazy_static! {
 	static ref FULL_SHARED_CACHES: Arc<Mutex<LruCache<H256, Arc<randomx::FullCache>>>> =
 		Arc::new(Mutex::new(LruCache::new(2)));
@@ -41,11 +44,20 @@ lazy_static! {
 		Arc::new(Mutex::new(LruCache::new(3)));
 }
 
-thread_local! {
+// A thread local storage key which owns its contents.
+thread_local! { // TODO understand RefCell
 	static FULL_MACHINE: RefCell<Option<(H256, randomx::FullVM)>> = RefCell::new(None);
 	static LIGHT_MACHINE: RefCell<Option<(H256, randomx::LightVM)>> = RefCell::new(None);
 }
 
+// Shareable mutable containers.
+
+// Rust memory safety is based on this rule: Given an object T, it is only possible to have one of the following:
+
+//    Having several immutable references (&T) to the object (also known as aliasing).
+//    Having one mutable reference (&mut T) to the object (also known as mutability).
+
+// A cell which can be written to only once.
 static GLOBAL_CONFIG: OnceCell<Config> = OnceCell::new();
 static DEFAULT_CONFIG: Config = Config::new();
 
