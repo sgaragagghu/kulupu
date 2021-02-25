@@ -97,10 +97,10 @@ unsafe impl WithCacheMode for WithLightCacheMode {
 // but it's useful any time where you want the protection provided by lifetimes but you don't actually have 
 // something to take a reference of.
 
-pub struct Cache<M: WithCacheMode> {
-	cache_ptr: *mut sys::randomx_cache,
-	dataset_ptr: Option<*mut sys::randomx_dataset>,
-	_marker: PhantomData<M>,
+pub struct Cache<M: WithCacheMode> { // VM just containg the actual VM and the cache pointer
+	cache_ptr: *mut sys::randomx_cache, // cache ptr
+	dataset_ptr: Option<*mut sys::randomx_dataset>, // dataset ptr
+	_marker: PhantomData<M>, // tell the compiler about life length i guess
 }
 
 pub type FullCache = Cache<WithFullCacheMode>; // aliasing
@@ -162,14 +162,14 @@ pub type FullVM = VM<WithFullCacheMode>;
 pub type LightVM = VM<WithLightCacheMode>;
 
 impl<M: WithCacheMode> VM<M> {
-	pub fn new(cache: Arc<Cache<M>>, config: &Config) -> Self {
+	pub fn new(cache: Arc<Cache<M>>, config: &Config) -> Self { // VM CONSTRUCTOR
 		let flags = M::randomx_flags(config);
 
 		let ptr = unsafe {
-			sys::randomx_create_vm(
+			sys::randomx_create_vm( // here creating the real VM!
 				flags,
-				cache.cache_ptr,
-				cache.dataset_ptr.unwrap_or(std::ptr::null_mut()),
+				cache.cache_ptr, // cache struct definition is above!
+				cache.dataset_ptr.unwrap_or(std::ptr::null_mut()), // cache struct definition is above!
 			)
 		};
 
