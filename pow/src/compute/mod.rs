@@ -92,16 +92,17 @@ fn need_new_vm<M: randomx::WithCacheMode>(
 	key_hash: &H256,
 	machine: &RefCell<Option<(H256, randomx::VM<M>)>>,
 ) -> bool {
-	let ms = machine.borrow();
+	let ms = machine.borrow(); // TODO is it an array of machines or just one ?
 
 	let need_new_vm = ms.as_ref().map(|(mkey_hash, _)| {
-		mkey_hash != key_hash
-	}).unwrap_or(true);
+		mkey_hash != key_hash // if the key is not up to date i guess..
+	}).unwrap_or(true); // if none so there isnt... it returns true! so make a new one, ok !
 
 	need_new_vm
 }
 
 // TODO understand what's happening here. I guess it's mining, it's the interface between rust and c++ randomX
+// AFAIK should return the machine... ?!
 fn loop_raw_with_cache<M: randomx::WithCacheMode, FPre, I, FValidate, R>(
 	key_hash: &H256,
 	machine: &RefCell<Option<(H256, randomx::VM<M>)>>,
@@ -113,13 +114,42 @@ fn loop_raw_with_cache<M: randomx::WithCacheMode, FPre, I, FValidate, R>(
 	FPre: FnMut() -> (Vec<u8>, I),
 	FValidate: Fn(H256, I) -> Loop<Option<R>>,
 {
-	if need_new_vm(key_hash, machine) {
-		let mut ms = machine.borrow_mut();
+	if need_new_vm(key_hash, machine) { // if key hash is new or there is no machine
+		let mut ms = machine.borrow_mut(); // borrow and mut i guess like &mut &...
 
-		let mut shared_caches = shared_caches.lock().expect("Mutex poisioned");
+		// Panics if the value is a None with a custom panic message provided by msg.
+		// pub fn lock(&self) -> LockResult<MutexGuard<'_, T>>
+		let mut shared_caches = shared_caches.lock().expect("Mutex poisioned"); // poisoned means the lock has been release
+											// because of a panic...
+
+// pub fn get_mut(&mut self) -> &mut Tⓘ
+// Returns a mutable reference to the underlying data.
+// This call borrows Cell mutably (at compile-time) which guarantees that we possess the only reference
 
 		if let Some(cache) = shared_caches.get_mut(key_hash) {
-			*ms = Some((*key_hash, randomx::VM::new(cache.clone(), global_config())));
+			*ms = Some((*key_hash, randomx::VM::new(cache.clone(), global_config()))); // finally creating the VM here.. it seems
+								// as you can see below it needs cache ptr and cache datasetptr
+// pub struct VM<M: WithCacheMode> {
+//	_cache: Arc<Cache<M>>,
+//	ptr: *mut sys::randomx_vm,
+// }
+// pub struct Cache<M: WithCacheMode> {
+//	cache_ptr: *mut sys::randomx_cache,
+//	dataset_ptr: Option<*mut sys::randomx_dataset>,
+//	_marker: PhantomData<M>,
+// }
+// pub fn new(cache: Arc<Cache<M>>, config: &Config) -> Self {
+// 	let flags = M::randomx_flags(config);
+//
+//	let ptr = unsafe {
+//		sys::randomx_create_vm( 
+//			flags,
+//			cache.cache_ptr,
+//			cache.dataset_ptr.unwrap_or(std::ptr::null_mut()),
+//		)
+//	};
+//	Self { _cache: cache, ptr }
+// }
 		} else {
 			info!(
 				target: "kulupu-randomx",
@@ -207,11 +237,18 @@ pub fn loop_raw<FPre, I, FValidate, R>(
 {
 	match mode {
 		ComputeMode::Mining => // mining...
-			FULL_MACHINE.with(|machine| {
-				loop_raw_with_cache::<randomx::WithFullCacheMode, _, _, _, _>(
+
+// pub fn with<F, R>(&'static self, f: F) -> R where
+//     F: FnOnce(&T) -> R, 
+// Acquires a reference to the value in this TLS key.
+// This will lazily initialize the value if this thread has not referenced this key yet.
+		
+			FULL_MACHINE.with(|machine| { // if there wasnt it-s initializing it now! Why don-t we check the result here ?
+				loop_raw_with_cache::<randomx::WithFullCacheMode, _, _, _, _>( // BUT this is a function... se the result of this function
+												// should kinda be a machine
 					key_hash, // the famouse kayhash... it's just the hash of an 'old' block (still must understand the meaning...)
 					machine, // closure object
-					&FULL_SHARED_CACHES, 
+					&FULL_SHARED_CACHES, // like global variable cache for every threads
 					f_pre, // more or less is the ComputeV1 struct. i guess it's a callback to 
 						// create the computeV1. Definitely... it's callef f_!
 					f_validate, // callback to decide if wehave to break mining ()cause we've got above the target difficulty
@@ -219,7 +256,7 @@ pub fn loop_raw<FPre, I, FValidate, R>(
 					round, // just a mining parameter
 				)
 			}),
-		ComputeMode::Sync => {
+		ComputeMode::Sync => { 
 			let full_ret = FULL_MACHINE.with(|machine| {
 				if !need_new_vm::<randomx::WithFullCacheMode>(key_hash, machine) {
 					Ok(loop_raw_with_cache::<randomx::WithFullCacheMode, _, _, _, _>(
