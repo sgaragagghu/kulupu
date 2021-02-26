@@ -150,36 +150,52 @@ fn loop_raw_with_cache<M: randomx::WithCacheMode, FPre, I, FValidate, R>(
 //	};
 //	Self { _cache: cache, ptr }
 // }
-		} else {
+		} else { // the cache hasn't been made yet.. let-s do it
 			info!(
 				target: "kulupu-randomx",
 				"At block boundary, generating new RandomX {} cache with key hash {} ...",
 				M::description(),
 				key_hash,
 			);
-			let cache = Arc::new(randomx::Cache::new(&key_hash[..], global_config()));
-			shared_caches.insert(*key_hash, cache.clone());
-			*ms = Some((*key_hash, randomx::VM::new(cache, global_config())));
+			let cache = Arc::new(randomx::Cache::new(&key_hash[..], global_config())); // creating the cache!!! wrapped into an Arc.
+									// interesting fact is: key_hash is needed to prepare the cache!
+									// so a new cache is needed every time the keyhash is new ?
+
+			shared_caches.insert(*key_hash, cache.clone());			    // inserting the cache into the 'global? variable'
+											    // at least that's what i undertood it is ^^^
+			*ms = Some((*key_hash, randomx::VM::new(cache, global_config())));  // inserting the machine into the global? variable
 		}
 	}
 
+	// the same as before
 	let mut ms = machine.borrow_mut();
 
 	let ret = ms.as_mut()
-		.map(|(mkey_hash, vm)| {
-			assert_eq!(mkey_hash, key_hash,
-					   "Condition failed checking cached key_hash. This is a bug");
+		.map(|(mkey_hash, vm)| { 
+			assert_eq!(mkey_hash, key_hash, // every vm should should have the same key_hash
+					   "Condition failed checking cached key_hash. This is a bug"); 
 
-			let mut ret = None;
+			let mut ret = None; // i guess it's a anothe variable 
 
-			match round {
+			match round { // ineresting to understand the meaning of round i think
+				      // TODO
 				0 => (),
 				1 => {
-					let (pre, int) = f_pre();
-					let hash = H256::from(vm.calculate(&pre[..]));
-					let validate = f_validate(hash, int);
+// let compute = ComputeV1 {
+//	key_hash,
+//	difficulty,
+//	pre_hash: *pre_hash,
+//	nonce,
+// };
+					let (pre, int) = f_pre(); // (compute.input().encode(), compute) // TODO understand 
+								  // what is compute.input()... but should be just some kind of representation.
 
-					match validate {
+					// randomx_calculate_hash Calculates a RandomX hash value -> it seems it's mining here..!
+					let hash = H256::from(vm.calculate(&pre[..]));  // converting the hash created by the vm (it seems) and 
+											// to H256 (256 bit hash)
+					let validate = f_validate(hash, int); // checking versus difficulty! it'll tell if continue or not to continue
+
+					match validate { // cool system lol
 						Loop::Continue => (),
 						Loop::Break(b) => {
 							ret = b;
@@ -188,9 +204,28 @@ fn loop_raw_with_cache<M: randomx::WithCacheMode, FPre, I, FValidate, R>(
 				},
 				_ => {
 					let (prev_pre, mut prev_int) = f_pre();
-					let mut vmn = vm.begin(&prev_pre[..]);
+// pub fn begin<'a>(&'a mut self, input: &[u8]) -> Next<'a, M> {
+//	unsafe {
+//		sys::randomx_calculate_hash_first(
+//			self.ptr,
+//			input.as_ptr() as *const std::ffi::c_void,
+//			input.len() as u64,
+//		);
+//	}
+//
+//	Next {
+//		inner: self,
+//	}
+//}
+// randomx_calculate_hash_first
+// Set of functions used to calculate multiple RandomX hashes more efficiently. 
+// randomx_calculate_hash_first will begin a hash calculation. randomx_calculate_hash_next 
+// will output the hash value of the previous input and begin the calculation of the next hash.
+// randomx_calculate_hash_last will output the hash value of the previous input.
+					let mut vmn = vm.begin(&prev_pre[..]); // it seems like pipelined, 
+									       //so the result is given at the second 'clock'
 
-					for _ in 1..round {
+					for _ in 1..round { // as before but bigger round version...
 						let (pre, int) = f_pre();
 						let prev_hash = H256::from(vmn.next(&pre[..]));
 						let prev_validate = f_validate(prev_hash, prev_int);
@@ -206,13 +241,13 @@ fn loop_raw_with_cache<M: randomx::WithCacheMode, FPre, I, FValidate, R>(
 						}
 					}
 
-					let prev_hash = H256::from(vmn.finish());
+					let prev_hash = H256::from(vmn.finish()); // emptying the pipe, last hash
 					let prev_validate = f_validate(prev_hash, prev_int);
 
 					match prev_validate {
-						Loop::Continue => (),
+						Loop::Continue => (), // nothing
 						Loop::Break(b) => {
-							ret = b;
+							ret = b; // it's not breaking, just changing the best value
 						},
 					}
 				}
@@ -220,7 +255,8 @@ fn loop_raw_with_cache<M: randomx::WithCacheMode, FPre, I, FValidate, R>(
 
 			ret
 		})
-		.expect("Local MACHINES always set to Some above; qed");
+		.expect("Local MACHINES always set to Some above; qed"); // expecting Some from the map
+									// but has been created so there shouldn't be issues about it
 
 	ret
 }
