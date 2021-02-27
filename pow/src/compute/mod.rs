@@ -126,7 +126,7 @@ fn loop_raw_with_cache<M: randomx::WithCacheMode, FPre, I, FValidate, R>(
 // Returns a mutable reference to the underlying data.
 // This call borrows Cell mutably (at compile-time) which guarantees that we possess the only reference
 
-		if let Some(cache) = shared_caches.get_mut(key_hash) {
+		if let Some(cache) = shared_caches.get_mut(key_hash) { // i guess it-s searching a cache with the current key_hash
 			*ms = Some((*key_hash, randomx::VM::new(cache.clone(), global_config()))); // finally creating the VM here.. it seems
 								// as you can see below it needs cache ptr and cache datasetptr
 // pub struct VM<M: WithCacheMode> {
@@ -150,7 +150,7 @@ fn loop_raw_with_cache<M: randomx::WithCacheMode, FPre, I, FValidate, R>(
 //	};
 //	Self { _cache: cache, ptr }
 // }
-		} else { // the cache hasn't been made yet.. let-s do it
+		} else { // the cache hasn't been made yet.. let-s do it..... IF no cache with right key_hash is found a new one is made
 			info!(
 				target: "kulupu-randomx",
 				"At block boundary, generating new RandomX {} cache with key hash {} ...",
