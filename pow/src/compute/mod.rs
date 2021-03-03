@@ -76,6 +76,12 @@ pub struct Calculation {
 	pub nonce: H256,
 }
 
+#[derive(PartialEq)]
+enum CacheReuse {
+	True,
+	False,
+}
+
 fn need_new_vm<M: randomx::WithCacheMode>(
 	key_hash: &H256,
 	machine: &RefCell<Option<(H256, randomx::VM<M>)>>,
@@ -89,6 +95,54 @@ fn need_new_vm<M: randomx::WithCacheMode>(
 	need_new_vm
 }
 
+fn do_new_vm<M: randomx::WithCacheMode>(
+	key_hash: &H256,
+	machine: &RefCell<Option<(H256, randomx::VM<M>)>>,
+	shared_caches: &Mutex<LruCache<H256, Arc<randomx::Cache<M>>>>,
+	cache_reuse: CacheReuse,
+) -> () {
+	let mut shared_caches = shared_caches.lock().expect("Poisoned lock");
+
+	if let Some(cache) = shared_caches.get_mut(key_hash) {
+		machine.replace(Some((*key_hash, randomx::VM::new(cache.clone(), global_config()))));
+	} else {
+		info!(
+			target: "kulupu-randomx",
+			"At block boundary, generating new RandomX {} cache with key hash {} ...",
+			M::description(),
+			key_hash,
+		);
+
+		machine.replace(None);
+
+		let cache = {
+			let unused_key_hash_cache = if cache_reuse == CacheReuse::True {
+				(*shared_caches)
+						.iter()
+						.find(|&(_, cache)| Arc::strong_count(cache) == 1)
+						.and_then(|(key, _)| Some(*key))
+			} else {
+				None
+			};
+			if let Some(key) = unused_key_hash_cache {
+				let mut cache = shared_caches
+						.remove(&key)
+						.expect("Old key_hash cache should still be in memory.");
+				Arc::get_mut(&mut cache)
+						.expect("There should be only one reference.")
+						.init(&key_hash[..]);
+				cache
+			} else {
+				Arc::new(randomx::Cache::new(&key_hash[..], global_config())
+						.expect("New cache allocation failed."))
+			}
+		};
+
+		shared_caches.insert(*key_hash, cache.clone());
+		machine.replace(Some((*key_hash, randomx::VM::new(cache.clone(), global_config()))));
+	}
+}
+
 fn loop_raw_with_cache<M: randomx::WithCacheMode, FPre, I, FValidate, R>(
 	key_hash: &H256,
 	machine: &RefCell<Option<(H256, randomx::VM<M>)>>,
@@ -96,28 +150,13 @@ fn loop_raw_with_cache<M: randomx::WithCacheMode, FPre, I, FValidate, R>(
 	mut f_pre: FPre,
 	f_validate: FValidate,
 	round: usize,
+	cache_reuse: CacheReuse
 ) -> Option<R> where
 	FPre: FnMut() -> (Vec<u8>, I),
 	FValidate: Fn(H256, I) -> Loop<Option<R>>,
 {
 	if need_new_vm(key_hash, machine) {
-		let mut ms = machine.borrow_mut();
-
-		let mut shared_caches = shared_caches.lock().expect("Mutex poisioned");
-
-		if let Some(cache) = shared_caches.get_mut(key_hash) {
-			*ms = Some((*key_hash, randomx::VM::new(cache.clone(), global_config())));
-		} else {
-			info!(
-				target: "kulupu-randomx",
-				"At block boundary, generating new RandomX {} cache with key hash {} ...",
-				M::description(),
-				key_hash,
-			);
-			let cache = Arc::new(randomx::Cache::new(&key_hash[..], global_config()));
-			shared_caches.insert(*key_hash, cache.clone());
-			*ms = Some((*key_hash, randomx::VM::new(cache, global_config())));
-		}
+		do_new_vm(key_hash, machine, shared_caches, cache_reuse);
 	}
 
 	let mut ms = machine.borrow_mut();
@@ -202,6 +241,7 @@ pub fn loop_raw<FPre, I, FValidate, R>(
 					f_pre,
 					f_validate,
 					round,
+					CacheReuse::True,
 				)
 			}),
 		ComputeMode::Sync => {
@@ -214,6 +254,7 @@ pub fn loop_raw<FPre, I, FValidate, R>(
 						f_pre,
 						f_validate,
 						round,
+						CacheReuse::True,
 					))
 				} else {
 					Err((f_pre, f_validate))
@@ -231,6 +272,7 @@ pub fn loop_raw<FPre, I, FValidate, R>(
 							f_pre,
 							f_validate,
 							round,
+							CacheReuse::False,
 						)
 					})
 				}
