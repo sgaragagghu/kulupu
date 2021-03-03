@@ -89,6 +89,48 @@ fn need_new_vm<M: randomx::WithCacheMode>(
 	need_new_vm
 }
 
+fn do_new_vm<M: randomx::WithCacheMode>(
+	key_hash: &H256,
+	machine: &RefCell<Option<(H256, randomx::VM<M>)>>,
+	shared_caches: &Mutex<LruCache<H256, Arc<randomx::Cache<M>>>>,
+) -> () {
+	let mut shared_caches = shared_caches.lock().expect("Poisoned lock");
+
+	if let Some(cache) = shared_caches.get_mut(key_hash) {
+		machine.replace(Some((*key_hash, randomx::VM::new(cache.clone(), global_config()))));
+	} else {
+		info!(
+			target: "kulupu-randomx",
+			"At block boundary, generating new RandomX {} cache with key hash {} ...",
+			M::description(),
+			key_hash,
+		);
+
+		machine.replace(None);
+
+		let cache = match randomx::Cache::new(&key_hash[..], global_config()) {
+			Ok(cache) => Arc::new(cache),
+			Err(_) => {
+				let key_to_replace = (*shared_caches)
+						.iter()
+						.find(|&(_, cache)| Arc::strong_count(cache) == 1)
+						.and_then(|(key, _)| Some(*key))
+						.expect("Cache allocation failed");
+				let mut cache = shared_caches
+						.remove(&key_to_replace)
+						.unwrap();
+				Arc::get_mut(&mut cache)
+						.unwrap()
+						.init(&key_hash[..]);
+				cache
+				},
+			};
+
+		shared_caches.insert(*key_hash, cache.clone());
+		machine.replace(Some((*key_hash, randomx::VM::new(cache.clone(), global_config()))));
+	}
+}
+
 fn loop_raw_with_cache<M: randomx::WithCacheMode, FPre, I, FValidate, R>(
 	key_hash: &H256,
 	machine: &RefCell<Option<(H256, randomx::VM<M>)>>,
@@ -101,23 +143,7 @@ fn loop_raw_with_cache<M: randomx::WithCacheMode, FPre, I, FValidate, R>(
 	FValidate: Fn(H256, I) -> Loop<Option<R>>,
 {
 	if need_new_vm(key_hash, machine) {
-		let mut ms = machine.borrow_mut();
-
-		let mut shared_caches = shared_caches.lock().expect("Mutex poisioned");
-
-		if let Some(cache) = shared_caches.get_mut(key_hash) {
-			*ms = Some((*key_hash, randomx::VM::new(cache.clone(), global_config())));
-		} else {
-			info!(
-				target: "kulupu-randomx",
-				"At block boundary, generating new RandomX {} cache with key hash {} ...",
-				M::description(),
-				key_hash,
-			);
-			let cache = Arc::new(randomx::Cache::new(&key_hash[..], global_config()));
-			shared_caches.insert(*key_hash, cache.clone());
-			*ms = Some((*key_hash, randomx::VM::new(cache, global_config())));
-		}
+		do_new_vm(key_hash, machine, shared_caches);
 	}
 
 	let mut ms = machine.borrow_mut();
