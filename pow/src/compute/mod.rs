@@ -25,8 +25,9 @@ pub use randomx::Config;
 
 use log::info;
 use codec::{Encode, Decode};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::cell::RefCell;
+use parking_lot::{Mutex, MutexGuard, Condvar};
 use sp_core::H256;
 use lazy_static::lazy_static;
 use lru_cache::LruCache;
@@ -39,6 +40,7 @@ lazy_static! {
 		Arc::new(Mutex::new(LruCache::new(2)));
 	static ref LIGHT_SHARED_CACHES: Arc<Mutex<LruCache<H256, Arc<randomx::LightCache>>>> =
 		Arc::new(Mutex::new(LruCache::new(3)));
+	static ref RECOVERED: Condvar = Condvar::new();
 }
 
 thread_local! {
@@ -89,6 +91,51 @@ fn need_new_vm<M: randomx::WithCacheMode>(
 	need_new_vm
 }
 
+fn recover_allocation_error<M: randomx::WithCacheMode>(
+	key_hash: &H256,
+	machine: &RefCell<Option<(H256, randomx::VM<M>)>>,
+	shared_caches: &mut MutexGuard<LruCache<H256, Arc<randomx::Cache<M>>>>,
+) -> () {	
+	let old_key_hash = machine
+						.borrow()
+						.as_ref()
+						.expect("Any cache has been allocated succesfully.")
+						.0;
+
+	machine.replace(None);
+
+	let last_thread = !(Arc::strong_count((*shared_caches)
+						.iter()
+						.find(|&(key, _)| *key == old_key_hash)
+						.expect("Old key_hash cache should still be in memory.")
+						.1) > 1);
+
+	if last_thread {
+		let mut cache = shared_caches
+			.remove(&old_key_hash)
+			.expect("Old key_hash cache should still be in memory.");
+
+		// Update the cache.
+		Arc::get_mut(&mut cache)
+			.expect("There should be only one reference.")
+			.init(&key_hash[..]);
+
+			shared_caches.insert(*key_hash, cache.clone());
+	} else {
+		while !shared_caches.contains_key(&key_hash) {
+			RECOVERED.wait(shared_caches);
+		}
+	}
+
+	if let Some(cache) = shared_caches.get_mut(key_hash) {
+		machine.replace(Some((*key_hash, randomx::VM::new(cache.clone(), global_config()))));
+	} else {
+		panic!("Cache not found after allocation recover.");
+	}
+
+	RECOVERED.notify_one();
+}
+
 fn loop_raw_with_cache<M: randomx::WithCacheMode, FPre, I, FValidate, R>(
 	key_hash: &H256,
 	machine: &RefCell<Option<(H256, randomx::VM<M>)>>,
@@ -101,12 +148,10 @@ fn loop_raw_with_cache<M: randomx::WithCacheMode, FPre, I, FValidate, R>(
 	FValidate: Fn(H256, I) -> Loop<Option<R>>,
 {
 	if need_new_vm(key_hash, machine) {
-		let mut ms = machine.borrow_mut();
-
-		let mut shared_caches = shared_caches.lock().expect("Mutex poisioned");
+		let mut shared_caches = shared_caches.lock();
 
 		if let Some(cache) = shared_caches.get_mut(key_hash) {
-			*ms = Some((*key_hash, randomx::VM::new(cache.clone(), global_config())));
+			machine.replace(Some((*key_hash, randomx::VM::new(cache.clone(), global_config()))));
 		} else {
 			info!(
 				target: "kulupu-randomx",
@@ -114,9 +159,16 @@ fn loop_raw_with_cache<M: randomx::WithCacheMode, FPre, I, FValidate, R>(
 				M::description(),
 				key_hash,
 			);
-			let cache = Arc::new(randomx::Cache::new(&key_hash[..], global_config()));
-			shared_caches.insert(*key_hash, cache.clone());
-			*ms = Some((*key_hash, randomx::VM::new(cache, global_config())));
+			match randomx::Cache::new(&key_hash[..], global_config()) {
+				Ok(cache) => {
+					let cache = Arc::new(cache);
+					shared_caches.insert(*key_hash, cache.clone());
+					machine.replace(Some((*key_hash, randomx::VM::new(cache, global_config()))));
+
+					RECOVERED.notify_one();
+				},
+				Err(_) => recover_allocation_error(key_hash, machine, &mut shared_caches),
+			}
 		}
 	}
 
