@@ -19,7 +19,7 @@
 pub mod compute;
 pub mod weak_sub;
 
-use std::{sync::Arc, time::{Duration, Instant}};
+use std::{sync::{Arc, atomic::{AtomicU32, Ordering}}, time::{Duration, Instant}};
 use parking_lot::Mutex;
 use codec::{Encode, Decode};
 use sp_core::{U256, H256, blake2_256};
@@ -28,6 +28,7 @@ use sp_runtime::generic::BlockId;
 use sp_runtime::traits::{
 	Block as BlockT, Header as HeaderT, UniqueSaturatedInto,
 };
+use lazy_static::lazy_static;
 use sp_consensus_pow::{Seal as RawSeal, DifficultyApi};
 use sc_consensus_pow::PowAlgorithm;
 use sc_client_api::{blockchain::HeaderBackend, backend::AuxStore};
@@ -240,7 +241,7 @@ impl<B: BlockT<Hash=H256>, C> PowAlgorithm<B> for RandomXAlgorithm<C> where
 pub struct Stats {
 	last_clear: Instant,
 	last_display: Instant,
-	round: u32,
+	//round: AtomicU32,
 }
 
 impl Stats {
@@ -248,7 +249,7 @@ impl Stats {
 		Self {
 			last_clear: Instant::now(),
 			last_display: Instant::now(),
-			round: 0,
+			//round: AtomicU32::new(0),
 		}
 	}
 }
@@ -361,41 +362,50 @@ pub fn mine<B, C>(
 		},
 	};
 
+
+	lazy_static! {
+		static ref ROUND: AtomicU32 = AtomicU32::new(0);
+	}
+
 	let now = Instant::now();
+	ROUND.fetch_add(round, Ordering::AcqRel);
 
 	let maybe_display = {
-		let mut stats = stats.lock();
-		let since_last_clear = now.checked_duration_since(stats.last_clear);
-		let since_last_display = now.checked_duration_since(stats.last_display);
+		let stats = stats.try_lock();
+        if let Some(mut stats) = stats {
+			let since_last_clear = now.checked_duration_since(stats.last_clear);
+			let since_last_display = now.checked_duration_since(stats.last_display);
 
-		if let (Some(since_last_clear), Some(since_last_display)) =
-			(since_last_clear, since_last_display)
-		{
-			let mut ret = None;
+			if let (Some(since_last_clear), Some(since_last_display)) =
+				(since_last_clear, since_last_display)
+			{
+				let mut ret = None;
 
-			stats.round += round;
-			let duration = since_last_clear;
+			//	stats.round += round;
+				let duration = since_last_clear;
 
-			let clear = duration >= Duration::new(600, 0);
-			let display = clear || since_last_display >= Duration::new(2, 0);
+				let clear = duration >= Duration::new(600, 0);
+				let display = clear || since_last_display >= Duration::new(2, 0);
 
-			if display {
-				stats.last_display = now;
-				ret = Some((duration, stats.round));
+				if display {
+					stats.last_display = now;
+					ret = Some((duration, ROUND.load(Ordering::Acquire)));
+				}
+
+				if clear {
+					stats.last_clear = now;
+					ROUND.store(0, Ordering::Release);
+				}
+
+				ret
+			} else {
+				warn!(
+					target: "kulupu-pow",
+					"Calculating duration failed, the system time may have changed and the hashrate calculation may be temporarily inaccurate."
+				);
+				None
 			}
-
-			if clear {
-				stats.last_clear = now;
-				stats.round = 0;
-			}
-
-			ret
 		} else {
-			warn!(
-				target: "kulupu-pow",
-				"Calculating duration failed, the system time may have changed and the hashrate calculation may be temporarily inaccurate."
-			);
-
 			None
 		}
 	};
