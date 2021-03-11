@@ -147,16 +147,29 @@ fn loop_raw_with_cache<M: randomx::WithCacheMode, FPre, I, FValidate, R>(
 					let (prev_pre, mut prev_int) = f_pre();
 					let mut vmn = vm.begin(&prev_pre[..]);
 
-					for _ in 1..round {
+					let round1: usize = round/2;
+
+					for _ in 1..(round1 + (round1.trailing_zeros() == 0) as usize) {
 						let (pre, int) = f_pre();
 						let prev_hash = H256::from(vmn.next(&pre[..]));
-						let prev_validate = f_validate(prev_hash, prev_int);
+						let prev_validate1 = f_validate(prev_hash, prev_int);
 
 						prev_int = int;
 
-						match prev_validate {
-							Loop::Continue => (),
-							Loop::Break(b) => {
+						let (pre, int) = f_pre();
+						let prev_hash = H256::from(vmn.next(&pre[..]));
+						let prev_validate2 = f_validate(prev_hash, prev_int);
+
+						prev_int = int;
+
+						match (prev_validate1, prev_validate2) {
+							(Loop::Continue, Loop::Continue) => (),
+							(Loop::Break(b), _) => {
+								ret = b;
+								break
+							},
+
+							(_, Loop::Break(b)) => {
 								ret = b;
 								break
 							},
