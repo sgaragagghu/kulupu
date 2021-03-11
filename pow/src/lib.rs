@@ -46,6 +46,7 @@ pub mod app {
 	app_crypto!(sr25519, ID);
 }
 
+#[inline(always)]
 /// Checks whether the given hash is above difficulty.
 pub fn is_valid_hash(hash: &H256, difficulty: Difficulty) -> bool {
 	let num_hash = U256::from(&hash[..]);
@@ -307,7 +308,7 @@ pub fn mine<B, C>(
 			compute::loop_raw(
 				&key_hash,
 				ComputeMode::Mining,
-				|| {
+                || {
 					let nonce = H256::random_using(&mut rng);
 
 					let compute = ComputeV1 {
@@ -348,6 +349,7 @@ pub fn mine<B, C>(
 
 					(compute.input(signature.clone()).encode(), (compute, signature))
 				},
+				#[inline(always)]
 				|work, (compute, signature)| {
 					if is_valid_hash(&work, difficulty) {
 						let seal = compute.seal(signature);
