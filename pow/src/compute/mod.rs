@@ -27,6 +27,7 @@ use log::info;
 use codec::{Encode, Decode};
 use std::sync::{Arc, Mutex};
 use std::cell::RefCell;
+use std::time::{Duration, Instant};
 use sp_core::H256;
 use lazy_static::lazy_static;
 use lru_cache::LruCache;
@@ -132,25 +133,50 @@ fn loop_raw_with_cache<M: randomx::WithCacheMode, FPre, I, FValidate, R>(
 			match round {
 				0 => (),
 				1 => {
+					//let now = Instant::now();
 					let (pre, int) = f_pre();
+					//let b_fpre = now.elapsed();
+					//let now = Instant::now();
 					let hash = H256::from(vm.calculate(&pre[..]));
+					//let b_hash = now.elapsed();
+					//let now = Instant::now();
 					let validate = f_validate(hash, int);
+					//let b_validate = now.elapsed();
 
 					match validate {
 						Loop::Continue => (),
 						Loop::Break(b) => {
 							ret = b;
 						},
-					}
+					}/*
+					info!(
+						target: "kulupu-pow",
+						"Benchmark 1 - ruond: {}, f_pre: {}, hash: {}, validate {}",
+						round,
+						humantime::format_duration(b_fpre).to_string(),
+						humantime::format_duration(b_hash).to_string(),
+						humantime::format_duration(b_validate).to_string(),
+					);*/
 				},
 				_ => {
+					let now = Instant::now();
 					let (prev_pre, mut prev_int) = f_pre();
+					let mut b_fpre = now.elapsed();
+					let now = Instant::now();
 					let mut vmn = vm.begin(&prev_pre[..]);
+					let mut b_hash = now.elapsed();
+					let mut b_validate = Duration::new(0, 0);
 
 					for _ in 1..round {
+						let now = Instant::now();
 						let (pre, int) = f_pre();
+						b_fpre += now.elapsed();
+						let now = Instant::now();
 						let prev_hash = H256::from(vmn.next(&pre[..]));
+						b_hash += now.elapsed();
+						let now = Instant::now();
 						let prev_validate = f_validate(prev_hash, prev_int);
+						b_validate += now.elapsed();
 
 						prev_int = int;
 
@@ -163,8 +189,12 @@ fn loop_raw_with_cache<M: randomx::WithCacheMode, FPre, I, FValidate, R>(
 						}
 					}
 
+					let now = Instant::now();
 					let prev_hash = H256::from(vmn.finish());
+					b_hash += now.elapsed();
+					let now = Instant::now();
 					let prev_validate = f_validate(prev_hash, prev_int);
+					b_validate += now.elapsed();
 
 					match prev_validate {
 						Loop::Continue => (),
@@ -172,6 +202,15 @@ fn loop_raw_with_cache<M: randomx::WithCacheMode, FPre, I, FValidate, R>(
 							ret = b;
 						},
 					}
+					
+					info!(
+						target: "kulupu-pow",
+						"Benchmark 1 - ruond: {}, f_pre: {}, hash: {}, validate {}",
+						round,
+						humantime::format_duration(b_fpre).to_string(),
+						humantime::format_duration(b_hash).to_string(),
+						humantime::format_duration(b_validate).to_string(),
+					);
 				}
 			}
 
