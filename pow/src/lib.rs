@@ -19,7 +19,7 @@
 pub mod compute;
 pub mod weak_sub;
 
-use std::{sync::Arc, time::{Duration, Instant}};
+use std::{sync::Arc, time::{Duration, Instant}, cell::RefCell};
 use parking_lot::Mutex;
 use codec::{Encode, Decode};
 use sp_core::{U256, H256, blake2_256};
@@ -267,6 +267,15 @@ pub fn mine<B, C>(
 	C: HeaderBackend<B> + AuxStore + ProvideRuntimeApi<B>,
 	C::Api: DifficultyApi<B, Difficulty> + AlgorithmApi<B>,
 {
+	thread_local! {
+		static COUNTER: RefCell<u32> = RefCell::new(0);
+		static PRINT: RefCell<bool> = RefCell::new(false);
+		static PREMINING_DURATION: RefCell<Duration> = RefCell::new(Duration::new(0,0));
+		static MINING_DURATION: RefCell<Duration> = RefCell::new(Duration::new(0,0));
+		static POSTMINING_DURATION: RefCell<Duration> = RefCell::new(Duration::new(0,0));
+	}
+
+	let premining_now = Instant::now();
 	let version_raw = client.runtime_api().identifier(parent)
 		.map_err(|e| sc_consensus_pow::Error::Environment(
 			format!("Fetching identifier from runtime failed: {:?}", e))
@@ -304,6 +313,9 @@ pub fn mine<B, C>(
 	.ok_or(sc_consensus_pow::Error::<B>::Other(
 		"Unable to mine: key not found in keystore".to_string(),
 	))?;
+    
+	PREMINING_DURATION.with(|y| y.replace_with(|x| *x + premining_now.elapsed()));   
+	let mining_now = Instant::now();
 
 	let maybe_seal = match version {
 		RandomXAlgorithmVersion::V1 => {
@@ -363,6 +375,8 @@ pub fn mine<B, C>(
 			)
 		},
 	};
+	MINING_DURATION.with(|y| y.replace_with(|x| *x + mining_now.elapsed()));
+	let postmining_now = Instant::now();
 
 	let now = Instant::now();
 
@@ -426,6 +440,44 @@ pub fn mine<B, C>(
 				every,
 			);
 		}
+	}
+
+    // to avoid all of this .with.... we may
+    // use a struct with all the stats, into a refcell so refcell<struct benchstats>... then
+    // let bench = ....with(|x| x.borrow().clone())
+    // create a new struct with the old values
+    // then we could replace with bench.field = new value...
+    // and read as bench.field
+    // at the end we should replace the old one ...with(|x| x.replace(bench))...
+
+	POSTMINING_DURATION.with(|y| y.replace_with(|x| *x + postmining_now.elapsed()));
+	COUNTER.with(|y| y.replace_with(|x| *x + 1));
+	if COUNTER.with(|x| x.borrow().clone()) % 20 == 0 {
+		if PRINT.with(|x| x.borrow().clone()) == false {
+			COUNTER.with(|y| y.replace(0));
+			PREMINING_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+			MINING_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+			POSTMINING_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+		}
+		PRINT.with(|x| x.replace(true));
+	}
+	if COUNTER.with(|x| x.borrow().clone()) % 1000 == 0 {
+		COUNTER.with(|y| y.replace(0));
+		PREMINING_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+		MINING_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+		POSTMINING_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+	}
+
+	if PRINT.with(|x| x.borrow().clone()) && COUNTER.with(|x| x.borrow().clone()) > 0 {
+		info!(
+			target: "kulupu-pow",
+			"Bench2 - round: {}, counter: {}, premining: {}, mining {}, postmining {}",
+			round,
+            COUNTER.with(|x| x.borrow().clone()),
+			humantime::format_duration(PREMINING_DURATION.with(|x| x.borrow().clone()) / COUNTER.with(|x| x.borrow().clone())).to_string(),
+			humantime::format_duration(MINING_DURATION.with(|x| x.borrow().clone()) / COUNTER.with(|x| x.borrow().clone())).to_string(),
+			humantime::format_duration(POSTMINING_DURATION.with(|x| x.borrow().clone()) / COUNTER.with(|x| x.borrow().clone())).to_string(),
+		);
 	}
 
 	Ok(maybe_seal)
