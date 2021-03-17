@@ -271,16 +271,26 @@ pub fn mine<B, C>(
 		static COUNTER: RefCell<u32> = RefCell::new(0);
 		static PRINT: RefCell<bool> = RefCell::new(false);
 		static PREMINING_DURATION: RefCell<Duration> = RefCell::new(Duration::new(0,0));
+		static VERSION_RAW_DURATION: RefCell<Duration> = RefCell::new(Duration::new(0,0));
+		static VERSION_DURATION: RefCell<Duration> = RefCell::new(Duration::new(0,0));
+		static RNG_DURATION: RefCell<Duration> = RefCell::new(Duration::new(0,0));
+		static KEY_HASH_DURATION: RefCell<Duration> = RefCell::new(Duration::new(0,0));
+		static PRE_DIGEST_DURATION: RefCell<Duration> = RefCell::new(Duration::new(0,0));
+		static AUTHOR_DURATION: RefCell<Duration> = RefCell::new(Duration::new(0,0));
+		static PAIR_DURATION: RefCell<Duration> = RefCell::new(Duration::new(0,0));
 		static MINING_DURATION: RefCell<Duration> = RefCell::new(Duration::new(0,0));
 		static POSTMINING_DURATION: RefCell<Duration> = RefCell::new(Duration::new(0,0));
 	}
 
 	let premining_now = Instant::now();
+	let version_raw_now = Instant::now();
 	let version_raw = client.runtime_api().identifier(parent)
 		.map_err(|e| sc_consensus_pow::Error::Environment(
 			format!("Fetching identifier from runtime failed: {:?}", e))
 		)?;
+	VERSION_RAW_DURATION.with(|y| y.replace_with(|x| *x + version_raw_now.elapsed()));
 
+	let version_now = Instant::now();
 	let version = match version_raw {
 		kulupu_primitives::ALGORITHM_IDENTIFIER_V1 => RandomXAlgorithmVersion::V1,
 		kulupu_primitives::ALGORITHM_IDENTIFIER_V2 => RandomXAlgorithmVersion::V2,
@@ -288,23 +298,33 @@ pub fn mine<B, C>(
 			"Unknown algorithm identifier".to_string()
 		)),
 	};
+	VERSION_DURATION.with(|y| y.replace_with(|x| *x + version_now.elapsed()));
 
+	let rng_now = Instant::now();
 	let mut rng = SmallRng::from_rng(&mut thread_rng())
 		.map_err(|e| sc_consensus_pow::Error::Environment(
 			format!("Initialize RNG failed for mining: {:?}", e)
 		))?;
+	RNG_DURATION.with(|y| y.replace_with(|x| *x + rng_now.elapsed()));
+	let key_hash_now = Instant::now();
 	let key_hash = key_hash(client, parent)?;
+	KEY_HASH_DURATION.with(|y| y.replace_with(|x| *x + key_hash_now.elapsed()));
 
+	let pre_digest_now = Instant::now();
 	let pre_digest = pre_digest.ok_or(sc_consensus_pow::Error::<B>::Other(
 		"Unable to mine: pre-digest not set".to_string(),
 	))?;
+	PRE_DIGEST_DURATION.with(|y| y.replace_with(|x| *x + pre_digest_now.elapsed()));
 
+	let author_now = Instant::now();
 	let author = app::Public::decode(&mut &pre_digest[..]).map_err(|_| {
 		sc_consensus_pow::Error::<B>::Other(
 			"Unable to mine: author pre-digest decoding failed".to_string(),
 		)
 	})?;
+	AUTHOR_DURATION.with(|y| y.replace_with(|x| *x + author_now.elapsed()));
 
+	let pair_now = Instant::now();
 	let pair = keystore.key_pair::<app::Pair>(
 		&author,
 	).map_err(|_| sc_consensus_pow::Error::<B>::Other(
@@ -313,6 +333,7 @@ pub fn mine<B, C>(
 	.ok_or(sc_consensus_pow::Error::<B>::Other(
 		"Unable to mine: key not found in keystore".to_string(),
 	))?;
+	PAIR_DURATION.with(|y| y.replace_with(|x| *x + pair_now.elapsed()));
     
 	PREMINING_DURATION.with(|y| y.replace_with(|x| *x + premining_now.elapsed()));   
 	let mining_now = Instant::now();
@@ -456,6 +477,13 @@ pub fn mine<B, C>(
 		if PRINT.with(|x| x.borrow().clone()) == false {
 			COUNTER.with(|y| y.replace(0));
 			PREMINING_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+			VERSION_RAW_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+			VERSION_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+			RNG_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+			KEY_HASH_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+			PRE_DIGEST_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+			AUTHOR_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+			PAIR_DURATION.with(|y| y.replace(Duration::new(0, 0)));
 			MINING_DURATION.with(|y| y.replace(Duration::new(0, 0)));
 			POSTMINING_DURATION.with(|y| y.replace(Duration::new(0, 0)));
 		}
@@ -464,17 +492,45 @@ pub fn mine<B, C>(
 	if COUNTER.with(|x| x.borrow().clone()) % 1000 == 0 {
 		COUNTER.with(|y| y.replace(0));
 		PREMINING_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+		VERSION_RAW_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+		VERSION_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+		RNG_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+		KEY_HASH_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+		PRE_DIGEST_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+		AUTHOR_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+		PAIR_DURATION.with(|y| y.replace(Duration::new(0, 0)));
 		MINING_DURATION.with(|y| y.replace(Duration::new(0, 0)));
 		POSTMINING_DURATION.with(|y| y.replace(Duration::new(0, 0)));
 	}
 
-	if PRINT.with(|x| x.borrow().clone()) && COUNTER.with(|x| x.borrow().clone()) > 0 {
+	if PRINT.with(|x| x.borrow().clone()) && 
+        COUNTER.with(|x| x.borrow().clone()) > 0 && 
+        postmining_now.elapsed().as_nanos() as u8 & 7u8 <= 4u8
+        {
 		info!(
 			target: "kulupu-pow",
-			"Bench2 - round: {}, counter: {}, premining: {}, mining {}, postmining {}",
+			"Bench3 - round: {}, counter: {}, premining: {}, version_raw: {}, version: {}, rng: {}, 
+                key_hash: {}, pre_digest: {}, author: {}, pair: {}, expected: {}, mining {}, postmining {}",
 			round,
             COUNTER.with(|x| x.borrow().clone()),
 			humantime::format_duration(PREMINING_DURATION.with(|x| x.borrow().clone()) / COUNTER.with(|x| x.borrow().clone())).to_string(),
+			humantime::format_duration(VERSION_RAW_DURATION.with(|x| x.borrow().clone()) / COUNTER.with(|x| x.borrow().clone())).to_string(),
+			humantime::format_duration(VERSION_DURATION.with(|x| x.borrow().clone()) / COUNTER.with(|x| x.borrow().clone())).to_string(),
+			humantime::format_duration(RNG_DURATION.with(|x| x.borrow().clone()) / COUNTER.with(|x| x.borrow().clone())).to_string(),
+			humantime::format_duration(KEY_HASH_DURATION.with(|x| x.borrow().clone()) / COUNTER.with(|x| x.borrow().clone())).to_string(),
+			humantime::format_duration(PRE_DIGEST_DURATION.with(|x| x.borrow().clone()) / COUNTER.with(|x| x.borrow().clone())).to_string(),
+			humantime::format_duration(AUTHOR_DURATION.with(|x| x.borrow().clone()) / COUNTER.with(|x| x.borrow().clone())).to_string(),
+			humantime::format_duration(PAIR_DURATION.with(|x| x.borrow().clone()) / COUNTER.with(|x| x.borrow().clone())).to_string(),
+			humantime::format_duration((
+                VERSION_RAW_DURATION.with(|x| x.borrow().clone()) +
+                VERSION_DURATION.with(|x| x.borrow().clone()) +
+                RNG_DURATION.with(|x| x.borrow().clone()) +
+                KEY_HASH_DURATION.with(|x| x.borrow().clone()) +
+                PRE_DIGEST_DURATION.with(|x| x.borrow().clone()) +
+                AUTHOR_DURATION.with(|x| x.borrow().clone()) +
+                PAIR_DURATION.with(|x| x.borrow().clone())) /
+                COUNTER.with(|x| x.borrow().clone())
+                ).to_string(),
 			humantime::format_duration(MINING_DURATION.with(|x| x.borrow().clone()) / COUNTER.with(|x| x.borrow().clone())).to_string(),
 			humantime::format_duration(POSTMINING_DURATION.with(|x| x.borrow().clone()) / COUNTER.with(|x| x.borrow().clone())).to_string(),
 		);
