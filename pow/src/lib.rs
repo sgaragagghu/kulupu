@@ -64,6 +64,15 @@ pub fn key_hash<B, C>(
 	const PERIOD: u64 = 4096; // ~2.8 days
 	const OFFSET: u64 = 128;  // 2 hours
 
+	thread_local! {
+		static COUNTER: RefCell<u32> = RefCell::new(0);
+		static PRINT: RefCell<bool> = RefCell::new(false);
+		static PARENT_HEADER_DURATION: RefCell<Duration> = RefCell::new(Duration::new(0,0));
+		static PARENT_NUMBER_DURATION: RefCell<Duration> = RefCell::new(Duration::new(0,0));
+		static WHILE_DURATION: RefCell<Duration> = RefCell::new(Duration::new(0,0));
+	}
+
+	let parent_header_now = Instant::now();
 	let parent_header = client.header(*parent)
 		.map_err(|e| sc_consensus_pow::Error::Environment(
 			format!("Client execution error: {:?}", e)
@@ -71,7 +80,10 @@ pub fn key_hash<B, C>(
 		.ok_or(sc_consensus_pow::Error::Environment(
 			"Parent header not found".to_string()
 		))?;
+	PARENT_HEADER_DURATION.with(|y| y.replace_with(|x| *x + parent_header_now.elapsed()));
+	let parent_number_now = Instant::now();
 	let parent_number = UniqueSaturatedInto::<u64>::unique_saturated_into(*parent_header.number());
+	PARENT_NUMBER_DURATION.with(|y| y.replace_with(|x| *x + parent_number_now.elapsed()));
 
 	let mut key_number = parent_number.saturating_sub(parent_number % PERIOD);
 	if parent_number.saturating_sub(key_number) < OFFSET {
@@ -79,6 +91,7 @@ pub fn key_hash<B, C>(
 	}
 
 	let mut current = parent_header;
+	let while_now = Instant::now();
 	while UniqueSaturatedInto::<u64>::unique_saturated_into(*current.number()) != key_number {
 		current = client.header(BlockId::Hash(*current.parent_hash()))
 			.map_err(|e| sc_consensus_pow::Error::Environment(
@@ -87,6 +100,44 @@ pub fn key_hash<B, C>(
 			.ok_or(sc_consensus_pow::Error::Environment(
 				format!("Block with hash {:?} not found", current.hash())
 			))?;
+	}
+	WHILE_DURATION.with(|y| y.replace_with(|x| *x + while_now.elapsed()));
+
+	COUNTER.with(|y| y.replace_with(|x| *x + 1));
+	if COUNTER.with(|x| x.borrow().clone()) % 20 == 0 {
+		if PRINT.with(|x| x.borrow().clone()) == false {
+			COUNTER.with(|y| y.replace(0));
+			PARENT_HEADER_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+			PARENT_NUMBER_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+			WHILE_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+		}
+		PRINT.with(|x| x.replace(true));
+	}
+	if COUNTER.with(|x| x.borrow().clone()) % 1000 == 0 {
+		COUNTER.with(|y| y.replace(0));
+		PARENT_HEADER_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+		PARENT_NUMBER_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+		WHILE_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+	}
+
+	if PRINT.with(|x| x.borrow().clone()) && 
+        COUNTER.with(|x| x.borrow().clone()) > 0 && 
+        while_now.elapsed().as_nanos() as u8 & 7u8 <= 2u8
+        {
+		info!(
+			target: "kulupu-pow",
+			"Bench4 - counter: {}, parent_header: {}, parent_number: {}, while: {}, total {}",
+            COUNTER.with(|x| x.borrow().clone()),
+			humantime::format_duration(PARENT_HEADER_DURATION.with(|x| x.borrow().clone()) / COUNTER.with(|x| x.borrow().clone())).to_string(),
+			humantime::format_duration(PARENT_NUMBER_DURATION.with(|x| x.borrow().clone()) / COUNTER.with(|x| x.borrow().clone())).to_string(),
+			humantime::format_duration(WHILE_DURATION.with(|x| x.borrow().clone()) / COUNTER.with(|x| x.borrow().clone())).to_string(),
+			humantime::format_duration((
+                PARENT_HEADER_DURATION.with(|x| x.borrow().clone()) +
+                PARENT_NUMBER_DURATION.with(|x| x.borrow().clone()) +
+                WHILE_DURATION.with(|x| x.borrow().clone())) /
+                COUNTER.with(|x| x.borrow().clone())
+                ).to_string(),
+		);
 	}
 
 	Ok(current.hash())
@@ -505,7 +556,7 @@ pub fn mine<B, C>(
 
 	if PRINT.with(|x| x.borrow().clone()) && 
         COUNTER.with(|x| x.borrow().clone()) > 0 && 
-        postmining_now.elapsed().as_nanos() as u8 & 7u8 <= 4u8
+        postmining_now.elapsed().as_nanos() as u8 & 7u8 <= 1u8
         {
 		info!(
 			target: "kulupu-pow",
