@@ -35,6 +35,8 @@ use sc_keystore::LocalKeystore;
 use kulupu_primitives::{Difficulty, AlgorithmApi};
 use rand::{SeedableRng, thread_rng, rngs::SmallRng};
 use log::*;
+use lazy_static::lazy_static;
+use lru_cache::LruCache;
 
 use crate::compute::{ComputeV1, ComputeV2, SealV1, SealV2, ComputeMode};
 
@@ -141,6 +143,55 @@ pub fn key_hash<B, C>(
 	}
 
 	Ok(current.hash())
+}
+
+
+pub fn key_hash_cached<B, C>(
+	client: &C,
+	parent: &BlockId<B>
+) -> Result<H256, sc_consensus_pow::Error<B>> where
+	B: BlockT<Hash=H256>,
+	C: HeaderBackend<B>,
+{
+	const PERIOD: u64 = 4096; // ~2.8 days
+	const OFFSET: u64 = 128;  // 2 hours
+
+	lazy_static! {
+		static ref KEY_HASHES: Arc<Mutex<LruCache<H256, H256>>> =
+			Arc::new(Mutex::new(LruCache::new(2)));
+	}
+
+	let parent_header = client.header(*parent)
+		.map_err(|e| sc_consensus_pow::Error::Environment(
+			format!("Client execution error: {:?}", e)
+		))?
+		.ok_or(sc_consensus_pow::Error::Environment(
+			"Parent header not found".to_string()
+		))?;
+	let mut key_hashes = KEY_HASHES.lock();
+	if let Some(key_h) = key_hashes.get_mut(&parent_header.hash()) {
+		Ok(*key_h)
+	} else {
+		let parent_number = UniqueSaturatedInto::<u64>::unique_saturated_into(*parent_header.number());
+
+		let mut key_number = parent_number.saturating_sub(parent_number % PERIOD);
+		if parent_number.saturating_sub(key_number) < OFFSET {
+			key_number = key_number.saturating_sub(PERIOD);
+		}
+
+		let mut current = parent_header.clone();
+		while UniqueSaturatedInto::<u64>::unique_saturated_into(*current.number()) != key_number {
+			current = client.header(BlockId::Hash(*current.parent_hash()))
+				.map_err(|e| sc_consensus_pow::Error::Environment(
+					format!("Client execution error: {:?}", e)
+				))?
+				.ok_or(sc_consensus_pow::Error::Environment(
+					format!("Block with hash {:?} not found", current.hash())
+				))?;
+		}
+		key_hashes.insert(parent_header.hash(), current.hash());
+		Ok(current.hash())
+	}
 }
 
 pub enum RandomXAlgorithmVersion {
@@ -356,9 +407,10 @@ pub fn mine<B, C>(
 		.map_err(|e| sc_consensus_pow::Error::Environment(
 			format!("Initialize RNG failed for mining: {:?}", e)
 		))?;
+
 	RNG_DURATION.with(|y| y.replace_with(|x| *x + rng_now.elapsed()));
 	let key_hash_now = Instant::now();
-	let key_hash = key_hash(client, parent)?;
+	let key_hash = key_hash_cached(client, parent)?;
 	KEY_HASH_DURATION.with(|y| y.replace_with(|x| *x + key_hash_now.elapsed()));
 
 	let pre_digest_now = Instant::now();
