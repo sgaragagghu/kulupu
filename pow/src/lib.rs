@@ -367,7 +367,7 @@ pub fn mine<B, C>(
 		.map_err(|e| sc_consensus_pow::Error::Environment(
 			format!("Initialize RNG failed for mining: {:?}", e)
 		))?;
-	let key_hash = key_hash(client, parent)?;
+	let key_hash = key_hash_cached(client, parent)?;
 
 	let pre_digest = pre_digest.ok_or(sc_consensus_pow::Error::<B>::Other(
 		"Unable to mine: pre-digest not set".to_string(),
