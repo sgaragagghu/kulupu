@@ -56,6 +56,7 @@ pub fn is_valid_hash(hash: &H256, difficulty: Difficulty) -> bool {
 	!overflowed
 }
 
+/*
 pub fn key_hash<B, C>(
 	client: &C,
 	parent: &BlockId<B>
@@ -93,9 +94,9 @@ pub fn key_hash<B, C>(
 
 	Ok(current.hash())
 }
+*/
 
-
-pub fn key_hash_cached<B, C>(
+pub fn key_hash<B, C>(
 	client: &C,
 	parent: &BlockId<B>
 ) -> Result<H256, sc_consensus_pow::Error<B>> where
@@ -335,7 +336,7 @@ pub fn mine<B, C>(
 		.map_err(|e| sc_consensus_pow::Error::Environment(
 			format!("Initialize RNG failed for mining: {:?}", e)
 		))?;
-	let key_hash = key_hash_cached(client, parent)?;
+	let key_hash = key_hash(client, parent)?;
 
 	let pre_digest = pre_digest.ok_or(sc_consensus_pow::Error::<B>::Other(
 		"Unable to mine: pre-digest not set".to_string(),
