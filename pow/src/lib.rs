@@ -28,9 +28,10 @@ use sp_runtime::generic::BlockId;
 use sp_runtime::traits::{
 	Block as BlockT, Header as HeaderT, UniqueSaturatedInto,
 };
+use kulupu_runtime::BlockNumber;
 use sp_consensus_pow::{Seal as RawSeal, DifficultyApi};
 use sc_consensus_pow::PowAlgorithm;
-use sc_client_api::{blockchain::HeaderBackend, backend::AuxStore};
+use sc_client_api::{blockchain::HeaderBackend, backend::AuxStore, client::BlockBackend};
 use sc_keystore::LocalKeystore;
 use kulupu_primitives::{Difficulty, AlgorithmApi};
 use rand::{SeedableRng, thread_rng, rngs::SmallRng};
@@ -101,7 +102,7 @@ pub fn key_hash<B, C>(
 	parent: &BlockId<B>
 ) -> Result<H256, sc_consensus_pow::Error<B>> where
 	B: BlockT<Hash=H256>,
-	C: HeaderBackend<B>,
+	C: BlockBackend<B> + HeaderBackend<B>,
 {
 	const PERIOD: u64 = 4096; // ~2.8 days
 	const OFFSET: u64 = 128;  // 2 hours
@@ -139,7 +140,10 @@ pub fn key_hash<B, C>(
 					format!("Block with hash {:?} not found", current.hash())
 				))?;
 		}
+
 		key_hashes.insert(parent_header.hash(), current.hash());
+		warn!("kulupu-pow hash 1 {:?}", current.hash());
+		warn!("kulupu-pow hash 2 {:?}", client.block_hash(sp_runtime::SaturatedConversion::saturated_into(key_number)));
 		Ok(current.hash())
 	}
 }
@@ -170,7 +174,7 @@ impl<C> Clone for RandomXAlgorithm<C> {
 }
 
 impl<B: BlockT<Hash=H256>, C> PowAlgorithm<B> for RandomXAlgorithm<C> where
-	C: HeaderBackend<B> + AuxStore + ProvideRuntimeApi<B>,
+	C: HeaderBackend<B> + AuxStore + ProvideRuntimeApi<B> + BlockBackend<B>,
 	C::Api: DifficultyApi<B, Difficulty> + AlgorithmApi<B>,
 {
 	type Difficulty = Difficulty;
@@ -316,7 +320,7 @@ pub fn mine<B, C>(
 	stats: &Arc<Mutex<Stats>>,
 ) -> Result<Option<RawSeal>, sc_consensus_pow::Error<B>> where
 	B: BlockT<Hash=H256>,
-	C: HeaderBackend<B> + AuxStore + ProvideRuntimeApi<B>,
+	C: HeaderBackend<B> + AuxStore + ProvideRuntimeApi<B> + BlockBackend<B>,
 	C::Api: DifficultyApi<B, Difficulty> + AlgorithmApi<B>,
 {
 	let version_raw = client.runtime_api().identifier(parent)
