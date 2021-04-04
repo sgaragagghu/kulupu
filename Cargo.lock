@@ -2769,6 +2769,7 @@ dependencies = [
  "frame-benchmarking",
  "frame-benchmarking-cli",
  "futures 0.3.13",
+ "humantime 2.1.0",
  "jsonrpc-core",
  "kulupu-pow",
  "kulupu-primitives",

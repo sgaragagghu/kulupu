@@ -37,6 +37,8 @@ use kulupu_pow::Error as PowError;
 use kulupu_pow::compute::Error as ComputeError;
 use kulupu_pow::compute::RandomxError;
 use log::*;
+use std::cell::RefCell;
+use std::time::Instant;
 
 pub use sc_executor::NativeExecutor;
 
@@ -335,8 +337,22 @@ pub fn new_full(
 
 				thread::spawn(move || {
 					loop {
+
+						thread_local! {
+							static COUNTER: RefCell<u32> = RefCell::new(0);
+							static PRINT: RefCell<bool> = RefCell::new(false);
+							static METADATA_DURATION: RefCell<Duration> = RefCell::new(Duration::new(0,0));
+							static MINE_DURATION: RefCell<Duration> = RefCell::new(Duration::new(0,0));
+							static WORKER_DURATION: RefCell<Duration> = RefCell::new(Duration::new(0,0));
+							static CURRENT_METADATA_DURATION: RefCell<Duration> = RefCell::new(Duration::new(0,0));
+							static SUBMIT_DURATION: RefCell<Duration> = RefCell::new(Duration::new(0,0));
+							static SLEEP_DURATION: RefCell<Duration> = RefCell::new(Duration::new(0,0));
+						}
+						let metadata_now = Instant::now();
 						let metadata = worker.lock().metadata();
+						METADATA_DURATION.with(|y| y.replace_with(|x| *x + metadata_now.elapsed()));
 						if let Some(metadata) = metadata {
+							let mine_now = Instant::now();
 							match kulupu_pow::mine(
 								client.as_ref(),
 								&keystore,
@@ -348,13 +364,20 @@ pub fn new_full(
 								&stats
 							) {
 								Ok(Some(seal)) => {
+									MINE_DURATION.with(|y| y.replace_with(|x| *x + mine_now.elapsed()));
+									let worker_now = Instant::now();
 									let mut worker = worker.lock();
+									WORKER_DURATION.with(|y| y.replace_with(|x| *x + worker_now.elapsed()));
+									let current_metadata_now = Instant::now();
 									let current_metadata = worker.metadata();
+									CURRENT_METADATA_DURATION.with(|y| y.replace_with(|x| *x + current_metadata_now.elapsed()));
 									if current_metadata == Some(metadata) {
+										let submit_now = Instant::now();
 										let _ = futures::executor::block_on(worker.submit(seal));
+										SUBMIT_DURATION.with(|y| y.replace_with(|x| *x + submit_now.elapsed()));
 									}
 								},
-								Ok(None) => (),
+								Ok(None) => {MINE_DURATION.with(|y| y.replace_with(|x| *x + mine_now.elapsed()));},
 								Err(PowError::Compute(ComputeError::CacheNotAvailable)) => {
 									thread::sleep(Duration::new(1, 0));
 								},
@@ -367,7 +390,48 @@ pub fn new_full(
 								},
 							}
 						} else {
+							let sleep_now = Instant::now();
 							thread::sleep(Duration::new(1, 0));
+							SLEEP_DURATION.with(|y| y.replace_with(|x| *x + sleep_now.elapsed()));
+						}
+						COUNTER.with(|y| y.replace_with(|x| *x + 1));
+						if COUNTER.with(|x| x.borrow().clone()) % 20 == 0 {
+							if PRINT.with(|x| x.borrow().clone()) == false {
+								COUNTER.with(|y| y.replace(0));
+								METADATA_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+								MINE_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+								WORKER_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+								CURRENT_METADATA_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+								SUBMIT_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+								SLEEP_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+							}
+							PRINT.with(|x| x.replace(true));
+						}
+						if COUNTER.with(|x| x.borrow().clone()) % 1000 == 0 {
+							COUNTER.with(|y| y.replace(0));
+							METADATA_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+							MINE_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+							WORKER_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+							CURRENT_METADATA_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+							SUBMIT_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+							SLEEP_DURATION.with(|y| y.replace(Duration::new(0, 0)));
+						}
+
+						if PRINT.with(|x| x.borrow().clone()) && 
+							COUNTER.with(|x| x.borrow().clone()) > 0 && 
+							metadata_now.elapsed().as_nanos() as u8 & 7u8 <= 4u8
+						{
+							info!(
+								target: "kulupu-pow",
+								"Bench6 - counter: {}, metadata: {}, mine {}, worker: {}, current: {}, submit: {}, sleep: {}", 
+								COUNTER.with(|x| x.borrow().clone()),
+								humantime::format_duration(METADATA_DURATION.with(|x| x.borrow().clone()) / COUNTER.with(|x| x.borrow().clone())).to_string(),
+								humantime::format_duration(MINE_DURATION.with(|x| x.borrow().clone()) / COUNTER.with(|x| x.borrow().clone())).to_string(),
+								humantime::format_duration(WORKER_DURATION.with(|x| x.borrow().clone()) / COUNTER.with(|x| x.borrow().clone())).to_string(),
+								humantime::format_duration(CURRENT_METADATA_DURATION.with(|x| x.borrow().clone()) / COUNTER.with(|x| x.borrow().clone())).to_string(),
+								humantime::format_duration(SUBMIT_DURATION.with(|x| x.borrow().clone()) / COUNTER.with(|x| x.borrow().clone())).to_string(),
+								humantime::format_duration(SLEEP_DURATION.with(|x| x.borrow().clone()) / COUNTER.with(|x| x.borrow().clone())).to_string(),
+							);
 						}
 					}
 				});
@@ -385,7 +449,7 @@ pub fn new_full(
 pub fn new_light(
 	config: Configuration,
 	check_inherents_after: u32,
-	donate: bool,
+		donate: bool,
 	enable_weak_subjectivity: bool,
 ) -> Result<TaskManager, ServiceError> {
 	let telemetry = config.telemetry_endpoints.clone()
